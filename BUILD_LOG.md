@@ -510,3 +510,91 @@ detections/sigma/` — 0 errors, 0 issues (after the one fix).
   project's 6 rules actually use (AND/OR/NOT, field modifiers, OR-lists) —
   it's not a claim of full Sigma spec coverage (e.g. no aggregation
   conditions, no near/timeframe correlation).
+
+## 2026-08-01 — Session 1 continued: platform layer (Phase 5) — backend tested, frontend not
+
+**Work done:**
+
+- `pyproject.toml` (root): added `[build-system]` + `[tool.setuptools.packages.find]`
+  (explicit `include = ["attack*", "detections*"]` — flat-layout
+  auto-discovery errors out with this many non-package top-level
+  directories) so the root `eadadl` package can be `pip install -e .`'d
+  for real. Added `attack/py.typed` + `detections/py.typed` (PEP 561
+  markers) so a *separate* package's `mypy` run can resolve `attack.*`
+  imports as typed.
+- `platform/backend/`: FastAPI app — `app/config.py` (pydantic-settings),
+  `app/database.py` (SQLAlchemy, SQLite dev default / Postgres via
+  compose, no Alembic — documented scope decision), `app/models.py`
+  (User/ScenarioRun/RunFinding), `app/schemas.py`, `app/auth.py` (JWT +
+  viewer/operator RBAC), `app/bootstrap.py` (creates one operator account
+  from `BACKEND_ADMIN_*` on first startup — no self-service registration,
+  single-operator lab), `app/routers/{auth,scenarios,runs,coverage}.py`.
+  `POST /runs` calls the real `attack.runner.run_scenario()` through the
+  real scope guard — not a separate, less-safe path.
+- Two-step install pattern established (`pip install -e .` at repo root,
+  then `pip install -e platform/backend[.dev]`) since the backend imports
+  `attack.*` directly rather than vendoring it — documented in
+  `platform/backend/README.md` "Why a path dependency".
+- 19 tests across `tests/{test_health,test_auth,test_scenarios,test_runs,test_coverage}.py`,
+  using an in-memory SQLite `TestClient` fixture. Notably:
+  `test_create_run_against_real_unprovisioned_scope_returns_403` —
+  deliberately does NOT mock the scope file, proving the API is gated by
+  actual repo state, same as the CLI's CI smoke test.
+  `test_viewer_cannot_create_run` — RBAC actually enforced, not just
+  declared.
+- **Found and fixed a real bug getting tests green:** `passlib`'s bcrypt
+  backend runs an internal self-test (hashing a 250-byte probe string)
+  that throws under `bcrypt>=4.0`'s strict 72-byte-input enforcement — a
+  currently-unfixed `passlib`/`bcrypt` version incompatibility, not
+  anything wrong with this code's own inputs. Switched to calling `bcrypt`
+  directly instead of `passlib.CryptContext`; documented in `app/auth.py`.
+- Chased down a second real issue: `mypy` couldn't resolve `attack.*`
+  imports from within `platform/backend/` despite the editable install
+  working fine at runtime — root cause: modern `pip install -e` uses a
+  PEP 660 finder-based mechanism (a generated Python file registered as an
+  import hook) that mypy's static import resolution can't see, since mypy
+  doesn't execute Python import machinery. Fixed with an explicit
+  `mypy_path = ["../.."]` in `platform/backend/pyproject.toml` rather than
+  fighting the editable-install mechanism.
+- Also hit (twice) a reminder that shell state doesn't persist between
+  Bash tool calls in this environment — a `pip install --user
+  types-python-jose` run without re-exporting `PATH` landed in a different
+  `site-packages` than the one `mypy`/`pytest` actually use, silently
+  "succeeding" while not fixing anything. Re-ran with `python3 -m pip
+  install --user ...` and explicit `PATH` export; now consistent.
+- `platform/frontend/`: Next.js 15 App Router + TypeScript (strict) +
+  Tailwind. Pages: `/` (dashboard — trigger a dry-run, view history),
+  `/runs/[id]` (findings detail), `/coverage` (heatmap from the real
+  `GET /coverage`), `/login`. `src/lib/api.ts` (typed fetch wrapper, JWT in
+  `localStorage`), `src/lib/types.ts` (hand-kept in sync with
+  `app/schemas.py` — no generated client).
+- `platform/docker-compose.yml` (Postgres + backend + frontend, outside
+  the lab network — distinct from `telemetry/elastic/docker-compose.yml`,
+  which runs the SIEM stack *inside* the lab on `siem01`) +
+  `platform/backend/Dockerfile` + `platform/frontend/Dockerfile`.
+- `.github/workflows/ci.yml`: `backend` job now unconditional and real
+  (two-step install, `ruff`/`mypy`/`pytest`); `frontend` job switched from
+  `npm ci` to `npm install` (no lockfile exists yet — no local npm to
+  generate one).
+- `.env.example`: added `BACKEND_ADMIN_USERNAME`/`BACKEND_ADMIN_PASSWORD`.
+
+**Verification performed:** Backend — `pytest`: 19/19 passing. `ruff
+check .`: clean. `mypy .` (strict): clean, 20 source files. Root repo's
+own `make lint`/`make test` re-confirmed green after the root
+`pyproject.toml` changes (55 tests, unaffected). Frontend — **none**: no
+local Node.js to run `npm install`/`tsc`/`eslint` against any of it.
+`docker-compose.yml`/both `Dockerfile`s — YAML-syntax-checked only, not
+built (no local Docker).
+
+**Not done / explicitly deferred:**
+
+- Frontend is genuinely unvalidated — flagged prominently in
+  `platform/frontend/README.md` and `ROADMAP.md` rather than presented
+  with the same confidence as the tested backend.
+- No Alembic migrations (SQLite `create_all()` only) — a real scope
+  decision for a lab-scale app with disposable run-history data, not an
+  oversight; documented in `platform/backend/README.md`.
+- `mode=live` on `POST /runs` goes through the same untested live path as
+  `attack/runner.py`'s CLI — no lab exists to exercise it either way.
+- No rate limiting, no fine-grained per-scenario permissions, no
+  `package-lock.json` (blocks `npm ci` in CI until one exists).

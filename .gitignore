@@ -34,6 +34,9 @@ venv/
 .mypy_cache/
 .ruff_cache/
 
+# Platform backend local dev DB (SQLite — see platform/backend/app/config.py)
+platform/backend/*.db
+
 # Node / frontend
 node_modules/
 .next/

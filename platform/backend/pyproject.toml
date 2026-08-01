@@ -1,0 +1,50 @@
+[project]
+name = "eadadl-backend"
+version = "0.1.0"
+description = "EADADL platform backend — FastAPI scenario runner, run history, coverage API, RBAC"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "sqlalchemy>=2.0",
+    # SQLite (dev default, app/config.py) needs no driver — this is only
+    # exercised when DATABASE_URL points at Postgres, i.e. via
+    # platform/docker-compose.yml. Not exercised by tests/ (SQLite only).
+    "psycopg[binary]>=3.1",
+    "pydantic-settings>=2.4",
+    "bcrypt>=4.0",
+    "python-jose[cryptography]>=3.3",
+    "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "httpx>=0.27",
+    "ruff>=0.6",
+    "mypy>=1.10",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["app"]
+# Points mypy at the repo-root source tree directly for resolving
+# `attack.*` imports — the root `eadadl` package is installed here via
+# `pip install -e ../..`, but that uses setuptools' PEP 660 finder-based
+# editable install, which mypy's static import resolution can't see
+# (it doesn't execute Python import machinery). mypy_path sidesteps that
+# entirely rather than fighting the editable-install mechanism.
+mypy_path = ["../.."]
+strict = true
+warn_unused_ignores = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v"

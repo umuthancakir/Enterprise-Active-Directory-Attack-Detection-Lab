@@ -82,10 +82,17 @@ detections-test: ## Validate Sigma rules and prove each fires against fixture te
 	python3 -m detections.test_runner
 
 # ---- platform -----------------------------------------------------------
+#
+# Backend (platform/backend/) is fully built and tested (19 passing
+# tests — see platform/backend/README.md). Frontend (platform/frontend/)
+# is written but unvalidated: no local Node.js/Docker install exists on
+# this machine to run `npm install`/build it (same Homebrew-blocked story
+# as Packer/QEMU — see ROADMAP.md "Known blockers"). This target itself is
+# therefore also unrun.
 
 .PHONY: platform
 platform: check-env ## Serve the platform (backend + frontend) locally via docker compose
-	docker compose -f platform/docker-compose.yml up --build  ## STATUS: STUB — see ROADMAP.md Phase 5
+	docker compose -f platform/docker-compose.yml up --build
 
 # ---- quality -----------------------------------------------------------
 #

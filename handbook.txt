@@ -52,8 +52,20 @@ truth for what actually works. As of this handbook:
         detections/coverage_matrix.json every run. NOT validated against
         real telemetry from a running lab - none exists yet. Misconfigs 6
         and 7 have no Sigma rule yet (no attack technique exercises them).
-  * Phases 5-7 (platform, IR) ............................................ NOT
-        STARTED. `make platform` is a STUB today.
+  * Phase 5 (platform: FastAPI backend + Postgres + Next.js frontend) ... PARTIAL.
+        Backend (platform/backend/) is DONE and fully tested: 19/19 tests
+        passing, ruff/mypy --strict clean. JWT auth with viewer/operator
+        roles; POST /runs calls the real attack.runner.run_scenario()
+        gated by the real scope guard (proven against the actual
+        unprovisioned inventory/lab-scope.yaml, same as the make attack
+        CLI). Frontend (platform/frontend/) is WRITTEN, NOT VALIDATED -
+        no local Node.js install (same Homebrew-blocked story as
+        Packer/QEMU), so no npm install/tsc/eslint/browser render has
+        happened. platform/docker-compose.yml likewise written, not run
+        (no local Docker). `make platform` itself is therefore also
+        unrun - see platform/README.md.
+  * Phases 6-7 (IR) ....................................................... NOT
+        STARTED.
 
 So the install steps below describe the intended, documented procedure. Expect
 to debug the Packer/UTM/Ansible layer the first time through, and expect the
@@ -328,14 +340,24 @@ STEP 7 - TEAR DOWN when finished (stops the spend)
   done yet (see ROADMAP.md Phase 4).
 
 -------------------------------------------------------------------------------
- 2.5  THE PLATFORM UI (once Phase 5 exists)
+ 2.5  THE PLATFORM UI (backend done+tested; frontend/compose unvalidated)
 -------------------------------------------------------------------------------
 
-  make platform brings up the FastAPI backend + PostgreSQL + React/Next
-  frontend via Docker Compose (outside the lab network). It exposes a
-  scenario runner, run history, an ATT&CK Navigator-style coverage heatmap,
-  and exportable reports. Default URLs: UI on http://localhost:3000, API on
-  http://localhost:8000.
+  make platform brings up the FastAPI backend + PostgreSQL + Next.js
+  frontend via Docker Compose (outside the lab network) - once Docker is
+  available (it isn't on this machine, see 2.7). Exposes a scenario
+  runner (dry-run only from the UI), run history + per-run findings, and
+  an ATT&CK-style coverage heatmap fed by GET /coverage. Default URLs: UI
+  on http://localhost:3000, API on http://localhost:8000 (interactive
+  docs at /docs). Sign in with BACKEND_ADMIN_USERNAME/PASSWORD from .env -
+  that account is auto-created on first backend startup.
+
+  You can run the backend alone, without Docker, right now:
+      cd platform/backend
+      pip install -e ../..              # root eadadl package
+      pip install -e ".[dev]"
+      pytest                            # 19 tests, all passing
+      uvicorn app.main:app --reload     # http://localhost:8000/docs
 
 -------------------------------------------------------------------------------
  2.6  TEARDOWN
@@ -368,8 +390,10 @@ STEP 7 - TEAR DOWN when finished (stops the spend)
   * Azure `az login` -> AADSTS50058
         -> No active browser session. Re-run `az login`, or
            `az login --use-device-code`.
-  * make platform does nothing
-        -> It's a stub until Phase 5 is built. See ROADMAP.md.
+  * make platform fails / does nothing
+        -> Needs Docker, not installed here (Homebrew-blocked, same as
+        Packer/QEMU). The backend alone runs fine without Docker/Compose -
+        see 2.5's "You can run the backend alone" snippet.
         (make attack and make detections-test are NOT in this bucket -
         both work today, no lab needed - see 2.2a/2.3/2.4.)
   * make attack SCENARIO=<name> says "REFUSED: No attackable host..."

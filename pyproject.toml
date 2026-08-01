@@ -8,6 +8,28 @@ dependencies = [
     "pysigma>=1.5.0",
 ]
 
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+# Explicit include list — this repo has many top-level directories
+# (infra/, telemetry/, config/, docs/, ...) that are NOT Python packages,
+# and setuptools' flat-layout auto-discovery errors out ("multiple
+# top-level packages discovered") without one. platform/backend/ installs
+# this package as a path dependency (`pip install -e ../..`) specifically
+# to import attack.runner/attack.lib.scope_guard — see
+# platform/backend/README.md.
+include = ["attack*", "detections*"]
+
+[tool.setuptools.package-data]
+# PEP 561 markers — lets platform/backend's mypy run (a separate
+# pyproject.toml/package) resolve types for `import attack.X` as this
+# package's own inline hints rather than reporting "Cannot find
+# implementation or library stub."
+attack = ["py.typed"]
+detections = ["py.typed"]
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",

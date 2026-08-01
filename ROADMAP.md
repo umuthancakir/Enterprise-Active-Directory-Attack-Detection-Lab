@@ -122,13 +122,24 @@ language) against synthetic event dicts.
 
 ## Phase 5 — Platform
 
+The backend is the second fully-tested layer this session (after the
+Python/Ansible layers) — FastAPI/SQLAlchemy/pytest are all pip-installable
+without admin rights. The frontend needs Node.js, which needs Homebrew,
+which needs admin rights this account doesn't have — so it's written but
+genuinely unvalidated, flagged accordingly rather than presented with the
+same confidence. See `platform/README.md`.
+
 | Item | Status | Notes |
 |---|---|---|
-| FastAPI backend (runner API, run history, coverage API, RBAC) | ⬜ | |
-| PostgreSQL schema | ⬜ | |
-| React/Next frontend (dashboard, run history, reports) | ⬜ | |
-| ATT&CK Navigator coverage heatmap | ⬜ | |
-| Dark mode / responsive / accessible | ⬜ | |
+| FastAPI backend (runner API, run history, coverage API, RBAC) | ✅ | **19/19 tests passing**, `ruff`/`mypy --strict` clean — `platform/backend/` |
+| SQLAlchemy schema (users, scenario_runs, run_findings) | ✅ | SQLite by default, Postgres via `platform/docker-compose.yml`; no Alembic migrations (documented scope decision, see `platform/backend/README.md`) |
+| Auth / RBAC (JWT, viewer/operator roles) | ✅ | tested — includes a negative test proving a `viewer` cannot trigger a run (403) |
+| `POST /runs` gated by the real scope guard | ✅ | tested against the real, unprovisioned `inventory/lab-scope.yaml` — returns 403, same as `make attack`'s CLI safety smoke test |
+| React/Next frontend (dashboard, run history, run detail, coverage heatmap) | 🚧 | written (`platform/frontend/`) — **not validated**: no local Node.js, so no `npm install`/`tsc`/`eslint`/browser render has happened |
+| ATT&CK-style coverage heatmap | 🚧 | `src/components/CoverageHeatmap.tsx` reads the real `GET /coverage` endpoint — same "written, unvalidated" caveat as the rest of the frontend |
+| Dark mode / responsive / accessible | 🚧 | Tailwind `dark:` classes used throughout; not verified in an actual browser |
+| `platform/docker-compose.yml` | 🚧 | written, syntax-checked (YAML parse) — not run, no local Docker |
+| CI backend/frontend jobs | ✅ | `.github/workflows/ci.yml`'s `backend` job now runs for real (two-step install — see `platform/backend/README.md`); `frontend` job will be the first real validation of that code whenever this branch is pushed |
 
 ## Phase 6 — DFIR / IR
 
@@ -181,3 +192,10 @@ language) against synthetic event dicts.
   by hand once a target exists, since they're the core of what makes the
   lab useful and PowerShell-inside-`win_shell` is invisible to
   `ansible-lint`.
+- **Node.js and Docker are blocked the same way Packer/QEMU are.** Both
+  need Homebrew, which needs admin rights this account doesn't have. This
+  is why `platform/backend/` (pure Python) could be fully tested this
+  session while `platform/frontend/` (Node.js) and
+  `platform/docker-compose.yml` (Docker) could not — not a difference in
+  effort, a difference in what's pip-installable versus what needs a
+  system package manager.
