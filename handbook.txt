@@ -18,17 +18,30 @@ truth for what actually works. As of this handbook:
 
   * Phase 0 (repo scaffold, governance docs, ADRs, scope guard, CI) ... DONE
   * Phase 1 (local UTM/QEMU lab: Packer templates + Ansible roles) ..... WRITTEN,
-        NOT YET BUILT OR RUN. None of the Packer/UTM/Ansible code has been
-        validated against a real install (there was no local hypervisor to
-        test on). Treat it as a careful first draft.
-  * Phases 2-7 (telemetry, attack engine, detections, platform, IR) .... NOT
-        STARTED. `make attack`, `make detections-test`, and `make platform`
-        are STUBS today.
+        NOT YET BUILT OR RUN. Packer/UTM code is still unvalidated against a
+        real install (no local hypervisor to test on - Homebrew itself is
+        blocked, no sudo on this machine). The Ansible layer is a partial
+        exception: `pip install --user ansible-core ansible-lint` needs no
+        sudo, so `ansible-playbook --syntax-check` and `ansible-lint` DO run
+        and pass clean (production profile) - real static validation, just
+        not a real WinRM/SSH target yet.
+  * Phase 3 (attack scenario engine) ................................... DONE
+        in DRY-RUN mode. `make attack SCENARIO=<name>` genuinely works today:
+        it resolves targets through the scope guard, prints the exact
+        commands each technique would run, and emits Finding records from
+        fixtures - fully tested (attack/lib/scope_guard.py + attack/runner.py,
+        43 passing tests). `MODE=live` (real tool execution) is implemented
+        but unexercised - there is no lab or installed offensive tooling to
+        run it against yet.
+  * Phases 2, 4-7 (telemetry, detections, platform, IR) ................ NOT
+        STARTED. `make detections-test` and `make platform` are STUBS today.
 
 So the install steps below describe the intended, documented procedure. Expect
 to debug the Packer/UTM/Ansible layer the first time through, and expect the
-attack/detection/platform commands to be non-functional until those phases are
-built out.
+detection/platform commands to be non-functional until those phases are
+built out. `make attack` (dry-run) works right now, before you build anything -
+try it against the repo as cloned and it will correctly refuse (nothing is
+provisioned yet).
 
 Default deploy target is LOCAL (UTM/QEMU on an Apple Silicon Mac). The Azure
 path was the original design but was removed from the tree (ADR 0004); it is
@@ -232,21 +245,49 @@ STEP 7 - TEAR DOWN when finished (stops the spend)
 
       make down             # tear the lab down
 
-  NOTE: as of this handbook, `make attack`, `make detections-test`, and
-  `make platform` are STUBS (Phases 3-5 not built). They will error or no-op
-  until those phases are implemented - see ROADMAP.md.
+  NOTE: as of this handbook, `make attack` genuinely works in its default
+  dry-run mode - even with no lab built yet, since it prints the commands it
+  WOULD run and emits Finding records from fixtures. Add MODE=live once a
+  real lab exists to run tooling for real (untested so far - see ROADMAP.md).
+  `make detections-test` and `make platform` are still STUBS (Phases 4-5 not
+  built) and will no-op until those phases are implemented.
 
   Discover available targets/commands any time:
 
       make help             # lists every Make target with a description
 
 -------------------------------------------------------------------------------
- 2.3  RUNNING ATTACKS (once Phase 3 exists)
+ 2.2a  DEV TOOLING (make lint / make test) - works today, no lab needed
+-------------------------------------------------------------------------------
+
+  These need no VM, no Homebrew, and no sudo - everything they use installs
+  via `pip install --user` (pytest, ruff, mypy, ansible-core, ansible-lint):
+
+      make lint              # ruff + mypy --strict + ansible-lint config/
+                              #   (+ packer fmt -check, only if packer is on PATH)
+      make test               # pytest - attack/lib scope guard, attack/runner,
+                              #   sync_scope, dynamic inventory (43 tests)
+
+  If `ansible-galaxy collection install -r config/requirements.yml` hits a
+  certificate error against galaxy.ansible.com, point SSL_CERT_FILE at
+  certifi's bundle first:
+
+      pip install --user certifi
+      export SSL_CERT_FILE="$(python3 -c 'import certifi; print(certifi.where())')"
+
+-------------------------------------------------------------------------------
+ 2.3  RUNNING ATTACKS
 -------------------------------------------------------------------------------
 
   make attack SCENARIO=<name> runs a named atomic technique or a full chain
   (recon -> initial access -> credential access -> lateral movement ->
-  domain dominance) FROM attacker01 against in-scope Windows hosts. Every
+  domain dominance) FROM attacker01 against in-scope Windows hosts. Defaults
+  to --dry-run: resolves targets through the scope guard, prints the exact
+  command each technique would run, and emits Finding records from
+  attack/fixtures/ - no tool is actually invoked, and this works today
+  against the repo as cloned (try it - it will correctly refuse, since
+  nothing is provisioned). Pass MODE=live to actually invoke tooling once a
+  real lab exists; that path is implemented but untested here. Every
   technique is tagged with its MITRE ATT&CK ID and orchestrates established
   tooling (NetExec, Impacket, BloodHound/SharpHound, PowerView, Atomic Red
   Team, Caldera) - no novel exploits. Results are normalized and stored for
@@ -302,8 +343,14 @@ STEP 7 - TEAR DOWN when finished (stops the spend)
   * Azure `az login` -> AADSTS50058
         -> No active browser session. Re-run `az login`, or
            `az login --use-device-code`.
-  * make attack / detections-test / platform do nothing
-        -> They're stubs until Phases 3-5 are built. See ROADMAP.md.
+  * make detections-test / platform do nothing
+        -> They're stubs until Phases 4-5 are built. See ROADMAP.md.
+        (make attack is NOT in this bucket - it works today, dry-run only.)
+  * make attack SCENARIO=<name> says "REFUSED: No attackable host..."
+        -> Correct behavior, not a bug: the scope guard fails closed until
+           `make sync-scope` has run against an actually-provisioned lab
+           (2.2, Step 6). Try it against a clean clone - this refusal is
+           the safety property working as designed.
 
 ===============================================================================
  END OF HANDBOOK  -  keep this file in sync with README.md and ROADMAP.md
