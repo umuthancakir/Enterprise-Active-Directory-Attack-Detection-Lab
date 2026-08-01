@@ -952,3 +952,192 @@ second push, all exit 0.
 - Wazuh/Splunk SIEM backends still deliberately not started, per standing
   operator instruction to hold until Elastic is validated end-to-end
   against a live lab.
+
+## 2026-08-01 — Session 4: QEMU installed from source, real Phase 1 build attempts, Elastic SIEM integration
+
+**QEMU install investigation (operator asked: try non-Homebrew paths, in
+order, before concluding it's genuinely blocked):**
+
+- Confirmed `sudo -n true`/`sudo -n -l`/`sudo -A true` all fail — no
+  passwordless sudo rule, no askpass helper. Real constraint confirmed
+  narrow: no interactive TTY for a password prompt, not missing privilege
+  (`id` still shows `admin` group membership).
+- QEMU has no official pre-compiled macOS binaries (confirmed by reading
+  qemu.org's own download page) — source build, Homebrew, or MacPorts
+  only. MacPorts' installer needs the same interactive admin-password
+  privilege elevation as Homebrew (GUI pkg installer or sudo either way)
+  — same blocker, not a real alternative.
+- UTM.app (already installed) bundles its own compiled QEMU as
+  `Contents/Frameworks/qemu-{arch}-softmmu.framework/qemu-{arch}-softmmu`
+  — genuinely present, but `otool -hv` shows `filetype DYLIB`, not
+  `EXECUTE`: UTM links QEMU in-process as a library rather than shelling
+  out to a CLI binary. Confirmed unusable for Packer's builder by trying
+  to exec one directly (`exec format error`).
+- conda-forge (already available locally via an existing Anaconda
+  install at `/opt/anaconda3`, itself pre-existing on this machine) has
+  no real `qemu`/`qemu-system-*` package for osx-arm64 — only
+  `qemu.qmp`, a QMP protocol *client* library, not the emulator.
+- **Real fix: build QEMU from source, no sudo, into a conda env.**
+  conda-forge DOES have every build dependency QEMU needs for a scoped
+  x86_64+aarch64-softmmu build: `pixman`, `glib`, `pkg-config`, `ninja`,
+  `meson`, `libffi`, `gettext`, `pcre2`, `libslirp` — all real osx-arm64
+  packages, installed into a dedicated `qemu-build` conda env
+  (`conda create -n qemu-build --override-channels -c conda-forge ...`;
+  `--override-channels` avoids Anaconda's own commercial-repo Terms of
+  Service prompt entirely, since only conda-forge is needed). Downloaded
+  QEMU 9.2.0 source from `download.qemu.org` (URL verified live, not
+  guessed), configured with `--target-list=x86_64-softmmu,aarch64-softmmu
+  --disable-gtk --disable-sdl --disable-cocoa --disable-spice
+  --disable-usb-redir --disable-docs --enable-vnc --enable-slirp`
+  (VNC enabling came later — see below), built with `ninja`, installed to
+  `~/.local/qemu`.
+- **Two real bugs found getting the built binaries to actually run:**
+  1. `ninja install`'s copy to the final prefix lost the `LC_RPATH`
+     pointing at the conda env's `libgnutls`/etc — `dyld: Library not
+     loaded: @rpath/libgnutls.30.dylib`. Fixed with
+     `install_name_tool -add_rpath <conda-env>/lib`, then had to
+     `codesign --force --sign -` afterward since modifying load commands
+     invalidates the existing signature.
+  2. That same blanket re-codesign **stripped the HVF entitlement**
+     (`com.apple.security.hypervisor`) QEMU's own install script had
+     applied via `scripts/entitlement.sh` — caught by `-accel hvf`
+     failing with `HV_DENIED` afterward. Fixed by re-signing with
+     `--entitlements accel/hvf/entitlements.plist` explicitly instead of
+     a bare re-sign. Real lesson, noted for next time: modifying a Mach-O
+     binary's load commands and blanket re-signing it afterward silently
+     drops any entitlements a more careful signing step had set.
+- **A third, real hardware-generation bug, not a signing mistake:**
+  `-M virt -accel hvf -cpu host` crashed with
+  `Property 'host-arm-cpu.sme' not found` on this machine's Apple M4 Pro
+  chip — a genuine QEMU 9.2.0 (Dec 2024) HVF/SME feature-detection gap
+  for CPU generations newer than the release. Confirmed via
+  `sysctl -n machdep.cpu.brand_string` + a targeted web search matching
+  the exact error to known QEMU/HVF-on-Apple-Silicon reports. Fixed by
+  building QEMU **11.0.3** instead (current stable, released 2026-07-24)
+  — same conda env, same configure flags — which does not hit this bug.
+- **Result — genuinely verified, not just `--version`:** both
+  `qemu-system-x86_64 --version` and `qemu-system-aarch64 --version`
+  exit 0 from the final `~/.local/qemu/bin/` install. Beyond that: a
+  blank `-M pc -accel tcg` x86_64 VM (matching windows-server.pkr.hcl's
+  config) stayed running for a real background-process liveness check,
+  and a blank `-M virt -accel hvf -cpu host` aarch64 VM (matching
+  kali-attacker.pkr.hcl/ubuntu-siem.pkr.hcl's config) did too — both
+  killed cleanly afterward. **This resolves the QEMU blocker per option 2
+  the operator specified** (installed successfully, not "genuinely
+  cannot install here").
+
+**Real Phase 1 build attempts (arm64-first, per operator's explicit
+choice among 3 options when asked how to scope the real download/build
+time cost):**
+
+- Ran `make check-tools` for the first time ever with all 4 required
+  tools genuinely on PATH (`packer`, `qemu-system-x86_64`, `ansible`,
+  `ansible-playbook` — the last two found under
+  `~/Library/Python/3.13/bin`, from the pip --user install already on
+  this machine) — passed.
+- Found `.env` existed locally but `WIN_ISO_URL`/`WIN_ISO_CHECKSUM`/
+  `KALI_ISO_URL`/`KALI_ISO_CHECKSUM`/`UBUNTU_IMG_CHECKSUM` were all
+  empty placeholders, and `ADMIN_PASSWORD` was still the literal
+  `change-me-generate-a-random-one` placeholder string. Sourced real
+  values for all of them:
+  - Kali arm64 netinst ISO + sha256: fetched live from
+    `cdimage.kali.org/kali-2026.2/SHA256SUMS`, length-verified
+    programmatically (64 hex chars) rather than trusted by eye — same
+    discipline as session 3's Packer checksum mistakes.
+  - Ubuntu 22.04 arm64 cloud image sha256: fetched live from
+    `cloud-images.ubuntu.com/releases/22.04/release/SHA256SUMS`.
+  - Windows Server 2022 evaluation ISO: Microsoft's evaluation center
+    page publishes no checksum at all (confirmed by reading the actual
+    page, not assumed) — downloaded via the official
+    `go.microsoft.com/fwlink` redirect to
+    `software-static.download.prss.microsoft.com` (real Microsoft CDN,
+    verified via `curl -sIL` before committing to the 5GB download), and
+    self-computed the sha256 to pin against re-downloads — documented in
+    `.env` as self-computed, not vendor-published, an honest narrower
+    claim than the Kali/Ubuntu checksums above.
+  - Generated a real random `ADMIN_PASSWORD` (`secrets.choice`) rather
+    than leave the placeholder in place for an actual VM build.
+- **`attacker01` (Kali) build — first attempt: failed in 46s.**
+  `Error launching VM: Qemu failed to start` /
+  `qemu-system-aarch64: -vnc: invalid option` — my own QEMU build had
+  been configured with `--disable-vnc` to trim dependencies, but Packer's
+  QEMU builder unconditionally passes `-vnc` for headless builds. Fixed
+  by reconfiguring+rebuilding QEMU 11.0.3 with `--enable-vnc` (no new
+  dependency issues).
+- **Second attempt: failed differently** —
+  `qemu-system-aarch64: no function defined to set boot device list for
+  this architecture`, from Packer's auto-injected `-boot once=d`. Root
+  cause and fix: see the "Fix real Packer/QEMU bugs" commit — QEMU's
+  aarch64 `virt` machine doesn't support `-boot` at all; the real fix is
+  Packer's proper EFI mechanism (`efi_firmware_code`/`efi_firmware_vars`,
+  `-drive if=pflash`), not a `-boot` value change.
+- **Third attempt: launched successfully but the installer never
+  proceeded** — Packer's "Typing the boot commands over VNC" produced a
+  VNC screenshot showing the keystrokes landing in **QEMU's own monitor**
+  (`(qemu)` prompt, `unknown command: 'nstall'`), not the guest. Root
+  cause, found by manually booting the same ISO with `vncdo` (a pip
+  --user-installed Python VNC client) for interactive diagnosis rather
+  than guessing: QEMU's aarch64 `virt` machine has **no default GPU or
+  USB/PS2 input controller** the way `pc` does — nothing was consuming
+  VNC's injected keystrokes. Fixed by adding explicit
+  `qemuargs = [["-device","virtio-gpu-pci"], ["-device","qemu-xhci"],
+  ["-device","usb-kbd"], ["-device","usb-tablet"]]`.
+- **Fourth attempt — also found (before rebuilding, via interactive VNC
+  screenshots) that Kali's arm64 netinst boots into GRUB, not an
+  ISOLINUX `boot:` prompt** — confirmed visually
+  (`GNU GRUB version 2.14-2+kali1`), meaning the original
+  `<esc><wait>install ...<enter>` boot_command was never going to work
+  regardless of the other two bugs (aarch64 has no legacy BIOS boot path
+  at all). Worked out the correct interaction live against the real ISO
+  before touching the template: `e` (edit highlighted entry) ->
+  `<down><down>` (setparams line -> linux line) -> `<end>` -> append the
+  same installer kernel params -> `<f10>` (boot edited entry, per GRUB's
+  own on-screen help text "Press Ctrl-x or F10 to boot"). Encoded into
+  `kali-attacker.pkr.hcl` and re-validated with `packer validate`.
+- **Fifth attempt (current, in progress as of this entry):** boot
+  sequence now reaches the installer correctly (no VNC/monitor
+  confusion, no GRUB mismatch) — real netinst package download/install
+  underway. [Outcome recorded in the next log entry once it completes —
+  see ROADMAP.md for current status.]
+
+**Elastic SIEM integration (fixture-testable + genuinely live-tested,
+run in parallel with the attacker01 build above):**
+
+- `detections/elastic_backend.py`: converts every rule in
+  `detections/sigma/` to real Lucene/Elasticsearch query strings via
+  pySigma's own `pysigma-backend-elasticsearch`, no hand-rolled
+  translation (same principle as `detections/matcher.py`). No pipeline
+  needed — all 8 rules' raw Windows Security field names convert
+  unchanged, verified for all 8.
+- `detections/elastic_integration_check.py`: the live-cluster
+  counterpart, deliberately kept out of `make detections-test`/CI (no
+  live cluster there — same reasoning as `sigma-cli` already documented
+  in `pyproject.toml`). For each technique: convert its rule, index its
+  fixtures into a throwaway index, query, assert matching fixtures hit
+  and non_matching don't, delete the index.
+- **Ran for real against a genuinely live Elasticsearch 8.15.0** —
+  downloaded the official tarball (matching
+  `telemetry/elastic/docker-compose.yml`'s pinned version) and ran it
+  standalone with its own bundled JDK, no Docker at all (Docker remains
+  unavailable — see ROADMAP.md). `xpack.security.enabled: false` for
+  this throwaway local instance only (not the real deployment config).
+  **First run: 5 of 8 techniques failed** —
+  `EventID:4662 AND ObjectName:*Domain\-Backups*`-style wildcard queries
+  silently missed real matches. Root cause: Elasticsearch's default
+  dynamic mapping makes string fields `text` (full-text analyzed), and
+  the standard analyzer tokenizes `"Domain-Backups"` into two separate
+  terms (`domain`, `backups`) that one wildcard pattern can't span — a
+  real Lucene/analyzer behavior no abstract Sigma matcher would ever
+  surface. Fixed by mapping fixture fields `keyword` on the test index —
+  not a workaround but the same assumption the real deployment already
+  makes (`telemetry/elastic/index-template.json` extends winlogbeat's
+  own template, which maps `winlog.event_data.*` as `keyword` for
+  exactly this reason). **Second run: 8/8 techniques passed** — every
+  matching fixture hit, every non_matching fixture correctly did not.
+- `tests/test_elastic_backend.py` (3 tests, always run — pure
+  conversion, no live cluster): all pass. Full repo pytest: 75/75.
+  `ruff`/`mypy --strict`: clean.
+- Added `pysigma-backend-elasticsearch` (core dependency —
+  `tests/test_elastic_backend.py` exercises it in the default suite) and
+  `elasticsearch` (dev-only, matches the sigma-cli pattern) to
+  `pyproject.toml`. Added `make detections-test-elastic`.
