@@ -1,0 +1,47 @@
+# Secrets / local config
+.env
+*.pem
+*.key
+!config/**/*.example
+
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+crash.*.log
+.terraform.lock.hcl
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node / frontend
+node_modules/
+.next/
+dist/
+build/
+*.tsbuildinfo
+.eslintcache
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Logs and lab artifacts
+*.log
+telemetry/captured/
+attack/results/
+reports/generated/
+
+# Ansible
+*.retry

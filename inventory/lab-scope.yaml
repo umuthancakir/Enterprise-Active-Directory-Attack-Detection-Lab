@@ -1,0 +1,79 @@
+# inventory/lab-scope.yaml
+#
+# THE SINGLE SOURCE OF TRUTH FOR AUTHORIZED ATTACK TARGETS.
+#
+# Every entry point into attack/ (and later platform/backend/'s runner API)
+# MUST resolve targets through the shared scope-guard loader for this file
+# before invoking any offensive tool. A host not listed here is refused at
+# runtime — there is no override flag. See docs/adr/0002-scope-guard.md.
+#
+# This file is meant to be kept in sync with Terraform outputs from
+# infra/azure/ after `make up`. Until the lab is actually provisioned, the
+# `provisioned: false` flag on every host below makes that explicit, and the
+# scope guard must treat unprovisioned hosts as not-runnable even though
+# they're listed (a host can be "in scope" once it exists without silently
+# becoming "attackable" before it exists).
+
+version: 1
+
+lab:
+  name: eadadl-lab
+  deploy_target: azure
+  # Set once Terraform has applied; the scope guard cross-checks this
+  # against `terraform output` rather than trusting this file blindly.
+  resource_group: null
+  region: null
+  provisioned: false
+
+hosts:
+  - id: dc01
+    role: domain_controller
+    hostname: dc01.eadadl.lab
+    ip: null            # filled in from terraform output after `make up`
+    os: windows_server
+    provisioned: false
+    terraform_resource: azurerm_windows_virtual_machine.dc
+
+  - id: mem01
+    role: member_server
+    hostname: mem01.eadadl.lab
+    ip: null
+    os: windows_server
+    provisioned: false
+    terraform_resource: azurerm_windows_virtual_machine.member
+
+  - id: wks01
+    role: workstation
+    hostname: wks01.eadadl.lab
+    ip: null
+    os: windows_11
+    provisioned: false
+    terraform_resource: azurerm_windows_virtual_machine.workstation
+
+  - id: attacker01
+    role: attacker
+    hostname: attacker01.eadadl.lab
+    ip: null
+    os: linux_kali
+    provisioned: false
+    terraform_resource: azurerm_linux_virtual_machine.attacker
+    notes: >
+      The attacker box is the only host the engine invokes tooling FROM.
+      It is never itself a valid --target for offensive techniques.
+
+  - id: siem01
+    role: siem
+    hostname: siem01.eadadl.lab
+    ip: null
+    os: linux_ubuntu
+    provisioned: false
+    terraform_resource: azurerm_linux_virtual_machine.siem
+    notes: >
+      Telemetry sink only. Never a valid --target for offensive techniques.
+
+# Roles that the scope guard must never accept as an attack target, even if
+# an id above resolves successfully. Defense in depth alongside the
+# provisioned/id checks.
+non_attackable_roles:
+  - attacker
+  - siem
