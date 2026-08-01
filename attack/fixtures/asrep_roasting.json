@@ -1,0 +1,12 @@
+{
+  "summary": "1 AS-REP roastable account found: svc-legacy (DoesNotRequirePreAuth) — see docs/vulnerabilities.md item 2.",
+  "details": {
+    "accounts_found": [
+      {
+        "account": "svc-legacy",
+        "hash_format": "$krb5asrep$23$",
+        "hash": "<REDACTED_ASREP_HASH_FIXTURE>"
+      }
+    ]
+  }
+}

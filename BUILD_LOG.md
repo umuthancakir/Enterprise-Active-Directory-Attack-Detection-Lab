@@ -298,3 +298,69 @@ files. `ansible-lint config/` — clean at production profile.
   reach them (no pip install path for Homebrew-only tools).
 - `attack/runner.py` (the engine that will actually use `scope_guard.py`)
   is next.
+
+## 2026-08-01 — Session 1 continued: attack scenario engine (Phase 3, mock mode)
+
+**Work done:**
+
+- `attack/finding.py`: `Finding` dataclass (the normalized result schema —
+  identical shape whether a run was dry-run or live), `write_run()`
+  persists a scenario run to `attack/results/*.json` (gitignored).
+- `attack/techniques.py`: 6-technique registry, each with an ATT&CK ID +
+  `attack.mitre.org` reference URL, a `command_template` (what `--dry-run`
+  prints verbatim), and a `mock_fixture` name. All 6 target `dc01`
+  (`domain_controller` role) — including `unconstrained_delegation_coerce`,
+  which is *conceptually* about `mem01` but sends its coercion RPC call to
+  `dc01`; documented in the module docstring why "which host does the tool
+  connect to" and "which host does this technique concern" aren't always
+  the same host.
+- `attack/chains.py`: 2 chains — `credential_harvest` (recon → credential
+  access, exercises misconfigs 1-2) and `domain_dominance` (recon →
+  privesc → lateral movement → domain dominance, exercises misconfigs
+  3-4). `Chain.__post_init__` validates every referenced technique id
+  actually exists in the registry.
+- `attack/fixtures/*.json`: one mock-output fixture per technique, each
+  with a `summary` + `details`. Any hash-shaped values are obvious
+  placeholders (`<REDACTED_*_HASH_FIXTURE>`), not anything resembling real
+  crackable output.
+- `attack/runner.py`: `run_scenario(scenario, mode, scope_file)` — resolves
+  every technique's target role through `ScopeGuard` **up front, before
+  running anything**, so a chain either has every target available or
+  refuses to start at all (no partial runs). `mode="dry_run"` (default)
+  loads the fixture and never shells out; `mode="live"` builds the same
+  command and actually runs it via `subprocess` — implemented for
+  completeness per the continuation prompt's "real execution stays gated
+  behind a provisioned lab" requirement, but **not exercised by any test**,
+  since there's no live lab or installed offensive tooling here to run it
+  against.
+- `tests/test_attack_runner.py`: 11 tests — registry sanity (every chain
+  references real techniques, every technique has an ATT&CK ID + fixture),
+  dry-run resolution/command-building, chain ordering, and — the important
+  ones — that an unprovisioned target or a chain where any technique can't
+  resolve gets refused via `ScopeViolation`, not silently skipped.
+- `Makefile`'s `attack` target rewritten: dry-run by default, `MODE=live`
+  opt-in. CI (`python-quality` job) gained an explicit smoke-test step
+  that runs the actual CLI against the real (unprovisioned)
+  `inventory/lab-scope.yaml` and asserts it refuses — not just a unit
+  test against a fixture, the real entry point against the real repo
+  state.
+
+**Verification performed (all actually run):** `pytest` — 43/43 passing
+(11 new). `ruff`/`mypy --strict` — clean. Manually ran
+`python3 -m attack.runner --scenario credential_harvest` against the real
+`inventory/lab-scope.yaml` — correctly printed `REFUSED: No attackable
+host with role 'domain_controller' found...` and exited 1. Manually ran
+`run_scenario("domain_dominance", ...)` against a hand-built provisioned
+fixture scope and confirmed the printed commands and summaries look right
+end-to-end (captured in this session's transcript, not committed anywhere
+— it's a manual sanity check, not a persisted artifact).
+
+**Not done / explicitly deferred:**
+
+- Live mode is implemented but genuinely untested — no real tool
+  (`netexec`, `bloodhound-python`, `bloodyAD`, `petitpotam.py`,
+  `secretsdump.py`) is installed here, and there's no lab to point them at.
+- Only 6 hand-modeled techniques exist, chosen to match this lab's specific
+  misconfigs — no Atomic Red Team or Caldera catalog integration yet.
+- Telemetry (Phase 2) is still unwritten — next up, per the operator's
+  stated priority order.

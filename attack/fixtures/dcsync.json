@@ -1,0 +1,8 @@
+{
+  "summary": "DCSync succeeded using DC01$'s captured ticket — dumped krbtgt and Administrator credential material. Domain dominance achieved.",
+  "details": {
+    "replicated_accounts": ["krbtgt", "Administrator"],
+    "method": "DRSUAPI (DCSync)",
+    "hash": "<REDACTED_NTLM_HASH_FIXTURE>"
+  }
+}

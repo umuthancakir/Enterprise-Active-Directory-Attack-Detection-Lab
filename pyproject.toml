@@ -31,6 +31,7 @@ python_version = "3.12"
 # platform/backend/ once Phase 5 lands (it will likely get its own
 # pyproject.toml instead, per CI's separate `backend` job).
 files = ["attack", "scripts", "config/inventory"]
+exclude = ["attack/results", "attack/fixtures"]
 strict = true
 warn_unused_ignores = true
 

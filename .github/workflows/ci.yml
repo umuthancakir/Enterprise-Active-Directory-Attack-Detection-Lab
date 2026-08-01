@@ -74,6 +74,13 @@ jobs:
         run: mypy
       - name: pytest
         run: pytest
+      - name: "Safety smoke-test: attack CLI refuses against the real (unprovisioned) lab-scope.yaml"
+        run: |
+          if python3 -m attack.runner --scenario credential_harvest --dry-run; then
+            echo "FAIL: attack runner should have refused — no host is provisioned in inventory/lab-scope.yaml on this branch." >&2
+            exit 1
+          fi
+          echo "OK: runner correctly refused (see attack/lib/scope_guard.py, ADR 0002)."
 
   sigma-validate:
     name: Sigma rule validation

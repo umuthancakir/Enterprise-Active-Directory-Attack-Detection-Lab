@@ -1,0 +1,9 @@
+{
+  "summary": "helpdesk-jsmith's GenericAll over Domain-Backups used to reset the group's gMSA-adjacent password — see docs/vulnerabilities.md item 4.",
+  "details": {
+    "grantee": "helpdesk-jsmith",
+    "target": "Domain-Backups",
+    "right_abused": "GenericAll",
+    "action_taken": "password_reset"
+  }
+}

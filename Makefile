@@ -61,11 +61,21 @@ sync-scope: ## Refresh inventory/lab-scope.yaml from infra/local/state.json + di
 	python3 scripts/sync_scope.py
 
 # ---- attack / detections ----------------------------------------------------
+#
+# `make attack` defaults to --dry-run: it resolves targets through the
+# scope guard, prints the exact command each technique would run, and
+# emits Finding records from attack/fixtures/ — no tool is actually
+# invoked. This is real and works right now, against the real (currently
+# unprovisioned) inventory/lab-scope.yaml, which is exactly why it safely
+# refuses until `make sync-scope` has run against an actual provisioned
+# lab. Pass MODE=live once a lab exists to actually run tooling — see
+# attack/runner.py's module docstring; that path is unexercised by any
+# test here.
 
 .PHONY: attack
-attack: check-env ## Run an attack chain against in-scope hosts only. Usage: make attack SCENARIO=<name>
-	@test -n "$(SCENARIO)" || (echo "Usage: make attack SCENARIO=<name>" && exit 1)
-	python3 -m attack.runner --scenario $(SCENARIO)  ## STATUS: STUB — see ROADMAP.md Phase 3
+attack: check-env ## Run an attack chain (dry-run by default) against in-scope hosts only. Usage: make attack SCENARIO=<name> [MODE=live]
+	@test -n "$(SCENARIO)" || (echo "Usage: make attack SCENARIO=<name> [MODE=live]" && exit 1)
+	python3 -m attack.runner --scenario $(SCENARIO) $(if $(filter live,$(MODE)),--live,--dry-run)
 
 .PHONY: detections-test
 detections-test: ## Validate Sigma rules and run detection tests against captured telemetry

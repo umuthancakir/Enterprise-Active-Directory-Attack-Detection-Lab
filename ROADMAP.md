@@ -58,7 +58,7 @@ as safe as this module.
 | Negative test coverage: out-of-scope host, unprovisioned host, `attacker`/`siem` roles, missing IP, malformed scope file (bad YAML, missing keys, wrong types, duplicate IDs) | ✅ | 15 of the 20 tests are negative cases — this module's entire job is refusing things |
 | No override/bypass parameter | ✅ | asserted directly via `inspect.signature()` in the test suite, not just "we didn't write one" |
 | Wired into CI (`python-quality` job) | ✅ | |
-| Wired into `attack/runner.py` | ⬜ | not written yet — see Phase 3 below |
+| Wired into `attack/runner.py` | ✅ | see Phase 3 below |
 
 ## Phase 2 — Telemetry & detection pipeline
 
@@ -71,12 +71,25 @@ as safe as this module.
 
 ## Phase 3 — Attack scenario engine
 
+Built ahead of Phase 2 (telemetry) this session, per operator priority: it's
+the piece that's fully testable without a live lab, via `--dry-run` mode.
+Real (`--live`) execution against actual tooling is unexercised — no lab
+exists yet to run it against — but the mode exists and is gated by the
+exact same scope guard as dry-run, so there's no separate, less-safe code
+path for "real" runs.
+
 | Item | Status | Notes |
 |---|---|---|
-| Atomic technique runner | ⬜ | |
-| Attack chains (recon → initial access → cred access → lateral movement → domain dominance) | ⬜ | |
-| ATT&CK ID + reference tagging | ⬜ | |
-| Result schema + storage | ⬜ | |
+| Atomic technique runner (`attack/runner.py`) | ✅ | dry-run mode fully tested (11 passing tests); live mode implemented, unexercised |
+| Technique registry (`attack/techniques.py`) — 6 techniques | ✅ | Kerberoasting, AS-REP roasting, BloodHound collection, ACL abuse, unconstrained-delegation coercion, DCSync |
+| Attack chains (`attack/chains.py`) — 2 chains | ✅ | `credential_harvest` (recon → cred access) and `domain_dominance` (recon → privesc → lateral movement → domain dominance) |
+| ATT&CK ID + reference tagging | ✅ | every technique cites a `T####[.###]` ID + `attack.mitre.org` URL; asserted by a test |
+| Every target resolved through the Phase-1 scope guard before any tool runs | ✅ | resolved up front for the whole chain, fail-closed, no partial runs — tested, and verified live: `make attack SCENARIO=credential_harvest` against the real (unprovisioned) `inventory/lab-scope.yaml` correctly refuses (`REFUSED: No attackable host with role 'domain_controller'...`) |
+| Result schema (`attack/finding.py`: `Finding`) + persistence (`attack/results/*.json`, gitignored) | ✅ | tested |
+| `make attack SCENARIO=<name>` | ✅ | dry-run by default; `MODE=live` for real execution (untested, needs a real lab) |
+| CI safety smoke-test: runner refuses against the real, unprovisioned scope file | ✅ | `python-quality` CI job |
+| Established-tooling orchestration (NetExec, Impacket, BloodHound, bloodyAD) | ✅ | command-building only — dry-run never shells out; live mode does via `subprocess`, unexercised |
+| Atomic Red Team / Caldera integration | ⬜ | not attempted — current 6 techniques are hand-modeled against this lab's specific misconfigs rather than pulled from an Atomic Red Team catalog |
 | Scope-guard enforcement wired into runner | ⬜ | |
 
 ## Phase 4 — Detection library

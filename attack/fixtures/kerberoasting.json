@@ -1,0 +1,13 @@
+{
+  "summary": "1 Kerberoastable SPN found: svc-sql (MSSQLSvc/dc01.eadadl.lab:1433) — see docs/vulnerabilities.md item 1.",
+  "details": {
+    "spns_found": [
+      {
+        "account": "svc-sql",
+        "spn": "MSSQLSvc/dc01.eadadl.lab:1433",
+        "hash_format": "$krb5tgs$23$",
+        "hash": "<REDACTED_TGS_HASH_FIXTURE>"
+      }
+    ]
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "summary": "dc01$ coerced to authenticate to mem01 (unconstrained delegation) — captured a usable TGT for DC01$ — see docs/vulnerabilities.md item 3.",
+  "details": {
+    "coerced_host": "dc01",
+    "delegation_host": "mem01",
+    "ticket_captured_for": "DC01$",
+    "ticket_type": "TGT"
+  }
+}

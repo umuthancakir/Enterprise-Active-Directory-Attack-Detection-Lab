@@ -1,0 +1,11 @@
+{
+  "summary": "Collected 6 users, 2 groups, 1 computer, 1 domain via LDAP — helpdesk-jsmith flagged by BloodHound as having a GenericAll edge to Domain-Backups.",
+  "details": {
+    "users_collected": 6,
+    "groups_collected": 2,
+    "computers_collected": 1,
+    "notable_edges": [
+      {"from": "helpdesk-jsmith@EADADL.LAB", "edge": "GenericAll", "to": "DOMAIN-BACKUPS@EADADL.LAB"}
+    ]
+  }
+}
