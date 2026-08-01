@@ -99,10 +99,32 @@
     <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
       <UserAccounts>
         <AdministratorPassword>
-          <Value>QbtgJbDiklEVdLiL0BDl!</Value>
+          <Value>__ADMIN_PASSWORD__</Value>
           <PlainText>true</PlainText>
         </AdministratorPassword>
       </UserAccounts>
+      <!-- Without AutoLogon, Windows sits at the lock screen after OOBE
+           forever waiting for someone to physically type credentials —
+           FirstLogonCommands are tied to the first REAL interactive
+           logon, so bootstrap.ps1 (which enables WinRM Basic auth) never
+           runs, and Packer's WinRM communicator polls indefinitely
+           against whatever default/incomplete WinRM state the base image
+           ships with. Observed on a real build: Windows Setup completed
+           successfully (confirmed via VNC screenshot — a real Windows
+           lock screen, not stuck mid-install) while Packer kept retrying
+           WinRM with persistent "401 - invalid content type" errors for
+           over an hour. LogonCount=1 is enough to trigger
+           FirstLogonCommands once; it does not leave the account
+           auto-logging-in on every subsequent boot. -->
+      <AutoLogon>
+        <Enabled>true</Enabled>
+        <LogonCount>1</LogonCount>
+        <Username>Administrator</Username>
+        <Password>
+          <Value>__ADMIN_PASSWORD__</Value>
+          <PlainText>true</PlainText>
+        </Password>
+      </AutoLogon>
       <OOBE>
         <HideEULAPage>true</HideEULAPage>
         <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>
