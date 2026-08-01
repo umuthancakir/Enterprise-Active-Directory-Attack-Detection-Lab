@@ -91,10 +91,38 @@ source "qemu" "ubuntu_siem" {
   # just the serial log for diagnosis.
   #
   # The NoCloud seed is attached here directly, NOT via cd_files/cd_label
-  # — see the nocloud_iso variable's description for why.
+  # — see the nocloud_iso variable's description for why. This means
+  # qemuargs has to include a -drive entry — and Packer's arg-merging
+  # keys defaults by flag name, so ANY -drive in qemuargs silently drops
+  # ALL of Packer's own auto-generated -drive entries (main disk, both
+  # pflash firmware halves), not just adds one more alongside them.
+  # Observed for real: the resulting qemu command line had ONLY the
+  # cidata cdrom, no main disk, no EFI firmware at all — QEMU spun at
+  # ~99% CPU (no bootable device to find) and Packer eventually timed
+  # out waiting for SSH that could never come. Fixed by replicating
+  # every drive Packer would have generated, explicitly, since adding
+  # one -drive of our own makes us responsible for all of them.
+  # The last two lines (-chardev/-device virtserialport) give the guest a
+  # virtio-serial channel for qemu-guest-agent — the provisioner's
+  # `systemctl start qemu-guest-agent` failed without one ("A dependency
+  # job for qemu-guest-agent.service failed" — the unit waits for
+  # /dev/virtio-ports/org.qemu.guest_agent.0, which never existed since
+  # nothing provided it). Packer's QEMU builder doesn't add this by
+  # default for any build (it talks to the guest over SSH, not QGA), so
+  # this isn't something qemuargs' -drive override-suppression removed —
+  # it was never there to begin with; this build just never happened to
+  # need it exercised until now. The socket path only matters if
+  # something on the host wants to talk QGA back to the guest, which
+  # nothing here does — its existence is enough to satisfy the service.
   qemuargs = [
     ["-serial", "file:infra/local/build/siem01-serial.log"],
+    ["-drive", "file=${var.output_directory}/siem01.qcow2,if=virtio,cache=writeback,discard=ignore,format=qcow2"],
     ["-drive", "file=${var.nocloud_iso},media=cdrom"],
+    ["-drive", "file=${var.efi_firmware_code},if=pflash,unit=0,format=raw,readonly=on"],
+    ["-drive", "file=${var.output_directory}/efivars.fd,if=pflash,unit=1,format=raw"],
+    ["-chardev", "socket,path=${var.output_directory}/qga.sock,server=on,wait=off,id=qga0"],
+    ["-device", "virtio-serial"],
+    ["-device", "virtserialport,chardev=qga0,name=org.qemu.guest_agent.0"],
   ]
 
   communicator         = "ssh"
@@ -109,7 +137,16 @@ build {
   sources = ["source.qemu.ubuntu_siem"]
 
   provisioner "shell" {
+    # cloud-init's own `package_update: true` + `packages: [...]` (see
+    # user-data.tmpl) runs apt-get in the background once SSH comes up —
+    # SSH being reachable only means sshd started, not that cloud-init's
+    # later "final" stage package installation has finished. Without
+    # waiting, this provisioner's own apt-get raced it for the dpkg/apt
+    # lock and lost: "E: Could not get lock /var/lib/apt/lists/lock. It
+    # is held by process ... (apt-get)" — observed on a real build.
+    # `cloud-init status --wait` blocks until cloud-init is fully done.
     inline = [
+      "cloud-init status --wait",
       "sudo apt-get update",
       "sudo apt-get install -y qemu-guest-agent",
       "sudo systemctl enable qemu-guest-agent"
