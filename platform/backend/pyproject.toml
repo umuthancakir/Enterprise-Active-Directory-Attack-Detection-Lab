@@ -23,6 +23,13 @@ dev = [
     "httpx>=0.27",
     "ruff>=0.6",
     "mypy>=1.10",
+    # Was installed ad-hoc on the dev machine during local troubleshooting
+    # but never added here — a clean CI runner doesn't have it, and mypy
+    # fails on app/auth.py's `from jose import ...` without it. Found by
+    # actually running CI on a clean runner, not by local review (local
+    # mypy passed the whole time because the stub was already present
+    # outside of anything this file tracks).
+    "types-python-jose",
 ]
 
 [tool.ruff]

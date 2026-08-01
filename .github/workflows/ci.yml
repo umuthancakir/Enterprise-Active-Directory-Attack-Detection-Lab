@@ -10,36 +10,53 @@ jobs:
   packer-validate:
     name: Packer fmt & validate
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: infra/local/packer
+    # Deliberately no working-directory override — infra/local/packer/*.pkr.hcl
+    # reference paths like "infra/local/build/ssh/lab_ed25519" that are
+    # relative to the REPO ROOT, matching how infra/local/build.sh and
+    # build-linux.sh actually invoke packer (from wherever the Makefile
+    # calls them, i.e. the repo root). Running packer from inside
+    # infra/local/packer/ instead — as this job originally did — silently
+    # resolves those paths wrong. Caught by actually running this job on a
+    # clean runner, not by local review.
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-packer@v3
       - name: packer fmt
-        run: packer fmt -check -recursive .
+        run: packer fmt -check -recursive infra/local/packer
+      - name: Create placeholder files packer validate checks for existence
+        # ssh_private_key_file (kali-attacker/ubuntu-siem) and the rendered
+        # user-data (ubuntu-siem) don't exist in a fresh checkout — real
+        # builds generate them via build.sh/build-linux.sh. packer validate
+        # stats these paths even though it never reads their contents, so a
+        # throwaway placeholder is enough — mirrors what the build scripts
+        # actually create, just without real key material or real cloud-init.
+        run: |
+          mkdir -p infra/local/build/ssh
+          ssh-keygen -t ed25519 -N "" -C "ci-validate-only" -f infra/local/build/ssh/lab_ed25519
+          cp infra/local/packer/http-linux/user-data.tmpl infra/local/packer/http-linux/user-data
       - name: packer init + validate (windows-server)
         run: |
-          packer init windows-server.pkr.hcl
+          packer init infra/local/packer/windows-server.pkr.hcl
           packer validate \
+            -var vm_name=validate-only \
             -var iso_url=https://example.invalid/placeholder.iso \
-            -var iso_checksum=sha256:0000000000000000000000000000000000000000000000000000000000000 \
+            -var iso_checksum=sha256:0000000000000000000000000000000000000000000000000000000000000000 \
             -var admin_password=placeholder-for-ci-validate-only \
-            windows-server.pkr.hcl
+            infra/local/packer/windows-server.pkr.hcl
       - name: packer init + validate (kali-attacker)
         run: |
-          packer init kali-attacker.pkr.hcl
+          packer init infra/local/packer/kali-attacker.pkr.hcl
           packer validate \
             -var iso_url=https://example.invalid/placeholder.iso \
-            -var iso_checksum=sha256:0000000000000000000000000000000000000000000000000000000000000 \
+            -var iso_checksum=sha256:0000000000000000000000000000000000000000000000000000000000000000 \
             -var admin_ssh_public_key="ssh-ed25519 AAAAplaceholder" \
-            kali-attacker.pkr.hcl
+            infra/local/packer/kali-attacker.pkr.hcl
       - name: packer init + validate (ubuntu-siem)
         run: |
-          packer init ubuntu-siem.pkr.hcl
+          packer init infra/local/packer/ubuntu-siem.pkr.hcl
           packer validate \
-            -var base_image_checksum=sha256:0000000000000000000000000000000000000000000000000000000000000 \
-            ubuntu-siem.pkr.hcl
+            -var base_image_checksum=sha256:0000000000000000000000000000000000000000000000000000000000000000 \
+            infra/local/packer/ubuntu-siem.pkr.hcl
 
   ansible-lint:
     name: Ansible lint

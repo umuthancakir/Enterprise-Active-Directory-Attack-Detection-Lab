@@ -43,8 +43,8 @@ variable "output_directory" {
 }
 
 source "qemu" "ubuntu_siem" {
-  iso_url          = var.base_image_url
-  iso_checksum     = var.base_image_checksum
+  iso_url      = var.base_image_url
+  iso_checksum = var.base_image_checksum
   # This is a pre-built cloud image, not an installer ISO — Packer's qemu
   # builder still calls the source file "iso_url" internally, but disk_image
   # tells it to boot the file directly as a disk rather than treating it as
@@ -76,10 +76,10 @@ source "qemu" "ubuntu_siem" {
   cd_files = ["${path.root}/http-linux/user-data", "${path.root}/http-linux/meta-data"]
   cd_label = "cidata"
 
-  communicator          = "ssh"
-  ssh_username          = var.admin_username
-  ssh_private_key_file  = "infra/local/build/ssh/lab_ed25519"
-  ssh_timeout           = "30m" # native arm64, no TCG emulation — should be fast
+  communicator         = "ssh"
+  ssh_username         = var.admin_username
+  ssh_private_key_file = "infra/local/build/ssh/lab_ed25519"
+  ssh_timeout          = "30m" # native arm64, no TCG emulation — should be fast
 
   shutdown_command = "sudo -S shutdown -P now"
 }

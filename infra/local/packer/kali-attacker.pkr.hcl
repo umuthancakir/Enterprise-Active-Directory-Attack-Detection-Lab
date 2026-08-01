@@ -91,7 +91,7 @@ source "qemu" "kali_attacker" {
   # root README.md links here). Packer needs the matching private key on
   # disk to complete the build's SSH-based provisioning step.
   ssh_private_key_file = "infra/local/build/ssh/lab_ed25519"
-  ssh_timeout           = "1h"
+  ssh_timeout          = "1h"
 
   shutdown_command = "sudo -S shutdown -P now"
 }

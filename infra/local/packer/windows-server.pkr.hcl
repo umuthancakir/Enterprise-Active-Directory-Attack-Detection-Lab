@@ -17,6 +17,10 @@ packer {
       source  = "github.com/hashicorp/qemu"
       version = "~> 1.1"
     }
+    windows-update = {
+      source  = "github.com/rgl/windows-update"
+      version = "~> 0.16"
+    }
   }
 }
 
@@ -55,11 +59,11 @@ source "qemu" "windows_server" {
   qemu_binary = "qemu-system-x86_64"
   accelerator = "tcg" # no HVF for a foreign-arch (x86_64) guest on Apple Silicon
 
-  cpus   = 2
-  memory = 4096
+  cpus      = 2
+  memory    = 4096
   disk_size = "60000M"
 
-  net_device    = "e1000"
+  net_device     = "e1000"
   disk_interface = "ide"
 
   headless = true
