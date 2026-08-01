@@ -33,22 +33,22 @@
     </component>
     <component name="Microsoft-Windows-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
       <DiskConfiguration>
+        <!-- Single MBR primary partition, not the EFI/MSR/Primary GPT
+             scheme this originally had. windows-server.pkr.hcl builds
+             under QEMU's "pc" machine + tcg accelerator — legacy BIOS,
+             no EFI firmware attached (see that file's accelerator
+             comment) — and Windows Setup hard-refuses to install a
+             GPT-partitioned disk under legacy BIOS ("Windows cannot be
+             installed to this disk. The selected disk is of the GPT
+             partition style.", observed on a real build attempt — see
+             BUILD_LOG.md session 4). BIOS boot needs MBR + one active
+             partition, not GPT + an ESP. -->
         <Disk wcm:action="add">
           <DiskID>0</DiskID>
           <WillWipeDisk>true</WillWipeDisk>
           <CreatePartitions>
             <CreatePartition wcm:action="add">
               <Order>1</Order>
-              <Type>EFI</Type>
-              <Size>260</Size>
-            </CreatePartition>
-            <CreatePartition wcm:action="add">
-              <Order>2</Order>
-              <Type>MSR</Type>
-              <Size>16</Size>
-            </CreatePartition>
-            <CreatePartition wcm:action="add">
-              <Order>3</Order>
               <Type>Primary</Type>
               <Extend>true</Extend>
             </CreatePartition>
@@ -57,19 +57,10 @@
             <ModifyPartition wcm:action="add">
               <Order>1</Order>
               <PartitionID>1</PartitionID>
-              <Label>System</Label>
-              <Format>FAT32</Format>
-            </ModifyPartition>
-            <ModifyPartition wcm:action="add">
-              <Order>2</Order>
-              <PartitionID>2</PartitionID>
-            </ModifyPartition>
-            <ModifyPartition wcm:action="add">
-              <Order>3</Order>
-              <PartitionID>3</PartitionID>
               <Label>Windows</Label>
               <Letter>C</Letter>
               <Format>NTFS</Format>
+              <Active>true</Active>
             </ModifyPartition>
           </ModifyPartitions>
         </Disk>
@@ -84,7 +75,7 @@
           </InstallFrom>
           <InstallTo>
             <DiskID>0</DiskID>
-            <PartitionID>3</PartitionID>
+            <PartitionID>1</PartitionID>
           </InstallTo>
         </OSImage>
       </ImageInstall>
@@ -108,7 +99,7 @@
     <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
       <UserAccounts>
         <AdministratorPassword>
-          <Value>__ADMIN_PASSWORD__</Value>
+          <Value>QbtgJbDiklEVdLiL0BDl!</Value>
           <PlainText>true</PlainText>
         </AdministratorPassword>
       </UserAccounts>
