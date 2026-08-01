@@ -1,0 +1,32 @@
+title: Directory Object Access on a SACL-Monitored ACL-Abuse Target
+id: 6e3638b7-dbcc-4487-b608-120cb97474c1
+status: test
+description: >
+  An operation was performed against the Domain-Backups group object,
+  which carries a SACL specifically because it's the target of a
+  deliberate GenericAll grant to helpdesk-jsmith (see
+  telemetry/windows-audit-policy/configure-object-sacls.ps1). Detects
+  attack/techniques.py's `acl_genericall_abuse` technique, which exploits
+  docs/vulnerabilities.md item 4.
+references:
+  - https://attack.mitre.org/techniques/T1098/
+author: EADADL
+date: 2026-08-01
+tags:
+  - attack.privilege-escalation
+  - attack.t1098
+logsource:
+  product: windows
+  service: security
+detection:
+  selection:
+    EventID: 4662
+    ObjectName|contains: 'Domain-Backups'
+  condition: selection
+falsepositives:
+  - Legitimate administrative changes to Domain-Backups by a real Domain
+    Admin — this rule doesn't distinguish who performed the operation,
+    only that the monitored object was touched at all (see "Not done" in
+    detections/sigma/README.md for the SubjectUserName refinement this
+    needs before production use).
+level: medium

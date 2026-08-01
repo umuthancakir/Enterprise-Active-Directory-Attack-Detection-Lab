@@ -1,0 +1,24 @@
+{
+  "matching": [
+    {
+      "EventID": "4769",
+      "TicketEncryptionType": "0x17",
+      "ServiceName": "svc-sql",
+      "TargetUserName": "helpdesk-jsmith@EADADL.LAB"
+    }
+  ],
+  "non_matching": [
+    {
+      "EventID": "4769",
+      "TicketEncryptionType": "0x17",
+      "ServiceName": "MEM01$",
+      "_reason": "machine-account SPN request — excluded by filter_machine_accounts"
+    },
+    {
+      "EventID": "4769",
+      "TicketEncryptionType": "0x12",
+      "ServiceName": "svc-sql",
+      "_reason": "AES-encrypted ticket request — not the RC4 Kerberoasting signature"
+    }
+  ]
+}

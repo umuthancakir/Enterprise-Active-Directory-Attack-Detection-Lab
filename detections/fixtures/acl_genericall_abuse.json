@@ -1,0 +1,17 @@
+{
+  "matching": [
+    {
+      "EventID": "4662",
+      "ObjectName": "CN=Domain-Backups,OU=LabUsers,DC=eadadl,DC=lab",
+      "SubjectUserName": "helpdesk-jsmith"
+    }
+  ],
+  "non_matching": [
+    {
+      "EventID": "4662",
+      "ObjectName": "CN=HelpDesk-L1,OU=LabUsers,DC=eadadl,DC=lab",
+      "SubjectUserName": "helpdesk-jsmith",
+      "_reason": "different object — not the SACL-monitored Domain-Backups group"
+    }
+  ]
+}

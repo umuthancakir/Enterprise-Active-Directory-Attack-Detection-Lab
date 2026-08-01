@@ -1,0 +1,32 @@
+title: Kerberoasting via RC4 Service Ticket Request
+id: a9065bce-673b-4ade-aee1-6b007691fea4
+status: test
+description: >
+  A Kerberos service ticket (TGS) was requested using RC4 (etype 0x17)
+  encryption. Legitimate modern clients request AES; a bulk or isolated
+  RC4 request against a service account SPN is the classic Kerberoasting
+  signature (Rubeus, Impacket GetUserSPNs, netexec --kerberoasting).
+  Detects attack/techniques.py's `kerberoasting` technique, which exploits
+  docs/vulnerabilities.md item 1 (svc-sql).
+references:
+  - https://attack.mitre.org/techniques/T1558/003/
+author: EADADL
+date: 2026-08-01
+tags:
+  - attack.credential-access
+  - attack.t1558.003
+logsource:
+  product: windows
+  service: security
+detection:
+  selection:
+    EventID: 4769
+    TicketEncryptionType: '0x17'
+  filter_machine_accounts:
+    ServiceName|endswith: '$'
+  condition: selection and not filter_machine_accounts
+falsepositives:
+  - Legitimate old clients/services that only support RC4 (rare in a
+    modern domain — telemetry/windows-audit-policy/README.md's audit
+    policy is what makes this event available at all).
+level: high

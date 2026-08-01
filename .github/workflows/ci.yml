@@ -82,23 +82,27 @@ jobs:
           fi
           echo "OK: runner correctly refused (see attack/lib/scope_guard.py, ADR 0002)."
 
-  sigma-validate:
-    name: Sigma rule validation
+  detections-test:
+    name: Sigma rule validation + fixture-based detection tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install sigma tooling
-        run: pip install sigma-cli
-      - name: Validate rules
-        run: |
-          if [ -n "$(find detections/sigma -name '*.yml' 2>/dev/null)" ]; then
-            sigma check detections/sigma/
-          else
-            echo "No Sigma rules yet — skipping (see ROADMAP.md)."
-          fi
+      - name: Install package + dev dependencies
+        run: pip install -e ".[dev]"
+      - name: make detections-test
+        # Validates every rule with pySigma (real parsing, not just YAML
+        # syntax) and proves it fires against detections/fixtures/ — see
+        # detections/test_runner.py's docstring for why this deliberately
+        # doesn't shell out to sigma-cli's network-dependent `sigma check`.
+        run: python3 -m detections.test_runner
+      - name: Upload coverage matrix
+        uses: actions/upload-artifact@v4
+        with:
+          name: detections-coverage-matrix
+          path: detections/coverage_matrix.json
 
   backend:
     name: Backend lint & test (FastAPI)

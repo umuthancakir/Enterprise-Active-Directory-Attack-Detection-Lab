@@ -1,0 +1,43 @@
+title: Directory Replication Rights Exercised Outside Normal DC Replication
+id: 62bbe599-20d9-4a81-89ee-043ea7fc29dc
+status: test
+description: >
+  A directory service access event carried the DS-Replication-Get-Changes
+  or DS-Replication-Get-Changes-All extended-right GUID — the two rights
+  DCSync actually uses to replicate credential material. Requires the
+  domain-NC SACL from telemetry/windows-audit-policy/configure-dcsync-sacl.ps1.
+  Detects attack/techniques.py's `dcsync` technique, the final step of the
+  domain_dominance chain.
+references:
+  - https://attack.mitre.org/techniques/T1003/006/
+author: EADADL
+date: 2026-08-01
+tags:
+  - attack.credential-access
+  - attack.t1003.006
+logsource:
+  product: windows
+  service: security
+detection:
+  selection:
+    EventID: 4662
+    Properties|contains:
+      - '1131f6aa-9c07-11d1-f79f-00c04fc2dcd2'
+      - '1131f6ad-9c07-11d1-f79f-00c04fc2dcd2'
+  # Excludes only dc01's OWN computer account, not every machine account —
+  # deliberately narrow. attack/techniques.py's dcsync technique performs
+  # its DCSync using a ticket captured FOR mem01$ (via the preceding
+  # unconstrained_delegation_coerce step, see that technique's
+  # command_template), so the SubjectUserName on the malicious event is
+  # "MEM01$", not "DC01$". A broad "SubjectUserName ends with $" filter
+  # would incorrectly exclude that and miss this lab's own attack chain —
+  # this is the whole point of filtering only the real DC's identity.
+  filter_real_dc:
+    SubjectUserName: 'DC01$'
+  condition: selection and not filter_real_dc
+falsepositives:
+  - Legitimate domain controllers performing normal intra-forest
+    replication — filtered by filter_real_dc for dc01 specifically. In a
+    multi-DC environment each additional real DC's computer account would
+    need its own filter entry; this lab only ever has one DC.
+level: critical

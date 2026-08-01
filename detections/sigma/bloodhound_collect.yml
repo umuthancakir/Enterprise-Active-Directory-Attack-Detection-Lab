@@ -1,0 +1,35 @@
+title: BloodHound/SharpHound Collector Process Execution
+id: 88924ea3-70d9-4009-b25c-add1e770effe
+status: test
+description: >
+  A process consistent with BloodHound/SharpHound's collector tooling
+  (default binary/module names, or the bloodhound-python CLI invoked with
+  its standard collection flags) executed. Detects attack/techniques.py's
+  `bloodhound_collect` technique — the recon step of both attack chains.
+references:
+  - https://attack.mitre.org/techniques/T1087/002/
+  - https://github.com/BloodHoundAD/SharpHound
+author: EADADL
+date: 2026-08-01
+tags:
+  - attack.discovery
+  - attack.t1087.002
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    EventID: 1
+    CommandLine|contains:
+      - 'bloodhound-python'
+      - 'SharpHound'
+      - '-c All'
+  condition: selection
+falsepositives:
+  - Authorized internal security assessments running the same tooling —
+    this rule cannot distinguish "us testing our own lab" (this project's
+    entire purpose) from a real red-team engagement using identical
+    tooling; that distinction has to come from process context (was this
+    run initiated by attack/runner.py against an in-scope host?) rather
+    than the telemetry alone.
+level: medium

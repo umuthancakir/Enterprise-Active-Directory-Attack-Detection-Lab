@@ -1,0 +1,31 @@
+title: AS-REP Roasting via Kerberos Pre-Authentication Bypass
+id: a8b1598e-8d1c-467a-bd57-9b53297bc03b
+status: test
+description: >
+  A TGT (event 4768) was issued with no Kerberos pre-authentication type
+  recorded — the signature of an account with "Do not require Kerberos
+  preauthentication" set (UF_DONT_REQUIRE_PREAUTH), which lets an attacker
+  request and offline-crack that account's AS-REP without ever knowing its
+  password. Detects attack/techniques.py's `asrep_roasting` technique,
+  which exploits docs/vulnerabilities.md item 2 (svc-legacy).
+references:
+  - https://attack.mitre.org/techniques/T1558/004/
+author: EADADL
+date: 2026-08-01
+tags:
+  - attack.credential-access
+  - attack.t1558.004
+logsource:
+  product: windows
+  service: security
+detection:
+  selection:
+    EventID: 4768
+    PreAuthType: 0
+  condition: selection
+falsepositives:
+  - None expected in a well-run domain — every account should require
+    pre-authentication. If this fires unexpectedly, check for a
+    legitimately misconfigured (not lab-planted) account before assuming
+    it's this lab's svc-legacy.
+level: high

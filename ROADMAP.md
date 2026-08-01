@@ -106,12 +106,19 @@ path for "real" runs.
 
 ## Phase 4 — Detection library
 
+Built with a fixture-based test loop specifically so `make detections-test`
+runs green in CI without a live SIEM — same design goal as Phase 3's
+dry-run mode. `detections/matcher.py` evaluates real pySigma-parsed
+condition trees (not a hand-rolled reimplementation of Sigma's condition
+language) against synthetic event dicts.
+
 | Item | Status | Notes |
 |---|---|---|
-| Sigma rules per exercised technique | ⬜ | |
-| Rule tests against real generated telemetry | ⬜ | |
-| CI detection validation | ⬜ | |
-| Attack→detection coverage matrix | ⬜ | |
+| Sigma rules per exercised technique (`detections/sigma/`) | ✅ | 6 rules, one per `attack/techniques.py` technique — all pass `sigma-cli`'s `sigma check` (0 issues) and pySigma's own parse |
+| Rule tests against telemetry fixtures (`detections/fixtures/`, `detections/matcher.py`) | ✅ | every rule proven against ≥1 matching + ≥1 non_matching synthetic event (12 unit tests in `tests/test_matcher.py`, integration tests in `tests/test_detections_runner.py`) — **not** tested against real telemetry, no lab exists yet |
+| CI detection validation | ✅ | `.github/workflows/ci.yml`'s `detections-test` job runs `python3 -m detections.test_runner` and uploads `coverage_matrix.json` as a build artifact |
+| Attack→detection coverage matrix (`detections/coverage.py`, `detections/coverage_matrix.json`) | ✅ | 6/6 techniques covered (100%), regenerated and committed every `make detections-test` run — feeds the Phase 5 heatmap (not built yet) |
+| Detections for misconfigs 6 and 7 | ⬜ | no `attack/techniques.py` technique exercises the GPO edit-rights abuse or SYSVOL credential read yet, so no Sigma rule exists for either — see `docs/vulnerabilities.md`'s Detection column |
 
 ## Phase 5 — Platform
 

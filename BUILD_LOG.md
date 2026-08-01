@@ -431,3 +431,82 @@ none exists.
   lowest-confidence artifacts specifically because I couldn't verify them
   against a live system — flagged accordingly rather than presented with
   the same confidence as the syntax-checked config.
+
+## 2026-08-01 — Session 1 continued: detection library (Phase 4, fixture-tested)
+
+**Work done:**
+
+- Installed `sigma-cli`/`pySigma` via `pip install --user` (same no-sudo
+  path as everything else this session) and used it for real — explored
+  pySigma's actual parsed-condition object model (`ConditionAND`/`OR`/`NOT`,
+  `ConditionFieldEqualsValueExpression`) interactively before writing
+  anything, rather than assuming its shape.
+- `detections/matcher.py`: evaluates a parsed `SigmaRule`'s real condition
+  tree against a plain event dict. Deliberately does NOT reimplement
+  Sigma's AND/OR/NOT/modifier semantics — reuses pySigma's own parser for
+  that and only supplies the leaf-level "does this event's field match
+  this Sigma value" comparison (wildcard via `fnmatch`, numeric-vs-string
+  tolerant for `SigmaNumber`).
+- `detections/sigma/`: 6 Sigma rules, one per `attack/techniques.py`
+  technique — `kerberoasting` (4769/RC4, with a machine-account filter),
+  `asrep_roasting` (4768/PreAuthType=0), `acl_genericall_abuse` (4662 on
+  Domain-Backups), `unconstrained_delegation_coerce` (Sysmon PipeEvent on
+  `\PIPE\efsrpc`/`\PIPE\lsarpc` — the actual PetitPotam-coercion
+  signature), `dcsync` (4662 with the replication-rights GUIDs, filtered
+  to exclude dc01's own legitimate replication — narrowly, since this
+  lab's own DCSync technique uses a *captured mem01$ ticket*, so a
+  naive "exclude all machine accounts" filter would have hidden our own
+  attack chain; caught this while writing the rule, not after), and
+  `bloodhound_collect` (process creation matching bloodhound-python/
+  SharpHound signatures). All cite their technique's ATT&CK URL in
+  `references` and an `attack.t####` tag.
+- Ran `sigma check detections/sigma/` (sigma-cli, after fixing the same
+  SSL cert issue as ansible-galaxy last session — `SSL_CERT_FILE` via
+  certifi): found and fixed one real low-severity issue (`PreAuthType: '0'`
+  should be an unquoted number, not a string).
+- `detections/fixtures/`: one JSON file per technique with `matching` +
+  `non_matching` synthetic events, each `non_matching` case commented with
+  *why* it shouldn't match (e.g. "machine-account SPN request — excluded
+  by filter_machine_accounts") — proving the rule's filters actually
+  filter, not just that the happy path matches.
+- `detections/coverage.py` + `detections/test_runner.py`: evaluates every
+  technique, writes `detections/coverage_matrix.json` (committed, feeds
+  the eventual Phase 5 heatmap). Deliberately does NOT shell out to
+  `sigma-cli`'s `sigma check` automatically — its tag validator fetches
+  MITRE ATT&CK data from GitHub, which would make `make detections-test`
+  fail offline/in a restricted CI runner; uses pySigma's local parser
+  directly instead, documented in the module's own docstring.
+- `tests/test_matcher.py` (7 tests) + `tests/test_detections_runner.py`
+  (5 tests, including an integration check against the real
+  `detections/sigma/`+`detections/fixtures/` content, same pattern as
+  `tests/test_attack_runner.py`'s registry sanity tests).
+- `Makefile`'s `detections-test` target now real. CI: replaced the old
+  `sigma-validate` stub job with `detections-test` (runs the real
+  test_runner, uploads `coverage_matrix.json` as a build artifact).
+- `docs/vulnerabilities.md` gained a Detection column linking items 1-4 to
+  their Sigma rules; items 5/6/7/8 honestly marked "not started" (6 and 7
+  have no exercising attack technique yet, so no rule exists for them).
+- Synced `handbook.txt` again (Phase 4 status, `make detections-test`
+  moved out of the "stub" bucket) per the operator's standing instruction
+  to keep it current as commands/behavior change.
+
+**Verification performed (all actually run):** `pytest` — 67/67 passing
+(12 new). `ruff`/`mypy --strict` — clean, 13 source files. `sigma check
+detections/sigma/` — 0 errors, 0 issues (after the one fix).
+`make detections-test` run directly: 6/6 techniques covered (100%),
+`detections/coverage_matrix.json` written.
+
+**Not done / explicitly deferred:**
+
+- No rule has been tested against real telemetry — the fixtures are a
+  reasonable-effort approximation of real Sysmon/Security event shapes,
+  hand-authored, not captured from an actual host (none exists yet).
+- Misconfigs 6 (GPO edit rights) and 7 (SYSVOL plaintext creds) have
+  neither an `attack/techniques.py` technique nor a Sigma rule yet — the
+  telemetry to detect them exists (`telemetry/windows-audit-policy/`,
+  Sysmon FileCreate on SYSVOL) but nothing exercises or detects them end
+  to end.
+- `detections/matcher.py` only handles the Sigma condition constructs this
+  project's 6 rules actually use (AND/OR/NOT, field modifiers, OR-lists) —
+  it's not a claim of full Sigma spec coverage (e.g. no aggregation
+  conditions, no near/timeframe correlation).

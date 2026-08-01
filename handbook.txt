@@ -43,8 +43,17 @@ truth for what actually works. As of this handbook:
         procedure. See docs/adr/0006-telemetry-architecture.md for the
         design (and why Sysmon alone can't detect 4 of this lab's 6
         implemented misconfigs - Windows Security auditing is required).
-  * Phases 4-7 (detections, platform, IR) ............................... NOT
-        STARTED. `make detections-test` and `make platform` are STUBS today.
+  * Phase 4 (detection library: Sigma rules + fixture tests) ............ DONE
+        against synthetic fixtures. `make detections-test` genuinely works
+        today, no lab needed: 6 Sigma rules (one per attack/techniques.py
+        technique), each proven to fire against synthetic telemetry via
+        detections/matcher.py (which reuses pySigma's real condition
+        parser, not a hand-rolled one). 6/6 techniques covered - writes
+        detections/coverage_matrix.json every run. NOT validated against
+        real telemetry from a running lab - none exists yet. Misconfigs 6
+        and 7 have no Sigma rule yet (no attack technique exercises them).
+  * Phases 5-7 (platform, IR) ............................................ NOT
+        STARTED. `make platform` is a STUB today.
 
 So the install steps below describe the intended, documented procedure. Expect
 to debug the Packer/UTM/Ansible layer the first time through, and expect the
@@ -255,12 +264,14 @@ STEP 7 - TEAR DOWN when finished (stops the spend)
 
       make down             # tear the lab down
 
-  NOTE: as of this handbook, `make attack` genuinely works in its default
-  dry-run mode - even with no lab built yet, since it prints the commands it
-  WOULD run and emits Finding records from fixtures. Add MODE=live once a
-  real lab exists to run tooling for real (untested so far - see ROADMAP.md).
-  `make detections-test` and `make platform` are still STUBS (Phases 4-5 not
-  built) and will no-op until those phases are implemented.
+  NOTE: as of this handbook, both `make attack` (dry-run) and
+  `make detections-test` genuinely work today, with no lab built yet:
+  `make attack` prints the commands it WOULD run and emits Finding records
+  from fixtures (add MODE=live once a real lab exists, untested so far);
+  `make detections-test` validates every Sigma rule and proves it fires
+  against synthetic telemetry fixtures, writing
+  detections/coverage_matrix.json. `make platform` is still a STUB
+  (Phase 5 not built) and will no-op.
 
   Discover available targets/commands any time:
 
@@ -304,13 +315,17 @@ STEP 7 - TEAR DOWN when finished (stops the spend)
   the detection half of the loop.
 
 -------------------------------------------------------------------------------
- 2.4  VALIDATING DETECTIONS (once Phase 4 exists)
+ 2.4  VALIDATING DETECTIONS
 -------------------------------------------------------------------------------
 
-  make detections-test validates the Sigma rules in detections/sigma/ and
-  runs each rule against the telemetry the matching attack generated,
-  producing an attack->detection coverage matrix. The intent: every technique
-  you can execute has a detection that provably fires.
+  make detections-test validates the Sigma rules in detections/sigma/ (one
+  per attack/techniques.py technique) and runs each against synthetic
+  fixture telemetry in detections/fixtures/ - no live SIEM needed, works
+  today against the repo as cloned. Writes detections/coverage_matrix.json
+  (6/6 techniques covered as of this handbook). Once a real lab exists,
+  detections/fixtures/ should be replaced/supplemented with actual captured
+  telemetry from a real attack run - that's tracked as follow-up work, not
+  done yet (see ROADMAP.md Phase 4).
 
 -------------------------------------------------------------------------------
  2.5  THE PLATFORM UI (once Phase 5 exists)
@@ -353,9 +368,10 @@ STEP 7 - TEAR DOWN when finished (stops the spend)
   * Azure `az login` -> AADSTS50058
         -> No active browser session. Re-run `az login`, or
            `az login --use-device-code`.
-  * make detections-test / platform do nothing
-        -> They're stubs until Phases 4-5 are built. See ROADMAP.md.
-        (make attack is NOT in this bucket - it works today, dry-run only.)
+  * make platform does nothing
+        -> It's a stub until Phase 5 is built. See ROADMAP.md.
+        (make attack and make detections-test are NOT in this bucket -
+        both work today, no lab needed - see 2.2a/2.3/2.4.)
   * make attack SCENARIO=<name> says "REFUSED: No attackable host..."
         -> Correct behavior, not a bug: the scope guard fails closed until
            `make sync-scope` has run against an actually-provisioned lab

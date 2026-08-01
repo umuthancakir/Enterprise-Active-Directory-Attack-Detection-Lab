@@ -1,0 +1,88 @@
+{
+  "generated_at": "2026-08-01T01:46:08.398495+00:00",
+  "techniques": [
+    {
+      "technique_id": "bloodhound_collect",
+      "attack_id": "T1087.002",
+      "sigma_rule": "detections/sigma/bloodhound_collect.yml",
+      "rule_title": "BloodHound/SharpHound Collector Process Execution",
+      "fixture_tests": {
+        "matching_passed": 1,
+        "matching_total": 1,
+        "non_matching_passed": 1,
+        "non_matching_total": 1
+      },
+      "covered": true
+    },
+    {
+      "technique_id": "kerberoasting",
+      "attack_id": "T1558.003",
+      "sigma_rule": "detections/sigma/kerberoasting.yml",
+      "rule_title": "Kerberoasting via RC4 Service Ticket Request",
+      "fixture_tests": {
+        "matching_passed": 1,
+        "matching_total": 1,
+        "non_matching_passed": 2,
+        "non_matching_total": 2
+      },
+      "covered": true
+    },
+    {
+      "technique_id": "asrep_roasting",
+      "attack_id": "T1558.004",
+      "sigma_rule": "detections/sigma/asrep_roasting.yml",
+      "rule_title": "AS-REP Roasting via Kerberos Pre-Authentication Bypass",
+      "fixture_tests": {
+        "matching_passed": 1,
+        "matching_total": 1,
+        "non_matching_passed": 1,
+        "non_matching_total": 1
+      },
+      "covered": true
+    },
+    {
+      "technique_id": "acl_genericall_abuse",
+      "attack_id": "T1098",
+      "sigma_rule": "detections/sigma/acl_genericall_abuse.yml",
+      "rule_title": "Directory Object Access on a SACL-Monitored ACL-Abuse Target",
+      "fixture_tests": {
+        "matching_passed": 1,
+        "matching_total": 1,
+        "non_matching_passed": 1,
+        "non_matching_total": 1
+      },
+      "covered": true
+    },
+    {
+      "technique_id": "unconstrained_delegation_coerce",
+      "attack_id": "T1187",
+      "sigma_rule": "detections/sigma/unconstrained_delegation_coerce.yml",
+      "rule_title": "Named Pipe Access Consistent with Forced Authentication Coercion",
+      "fixture_tests": {
+        "matching_passed": 1,
+        "matching_total": 1,
+        "non_matching_passed": 1,
+        "non_matching_total": 1
+      },
+      "covered": true
+    },
+    {
+      "technique_id": "dcsync",
+      "attack_id": "T1003.006",
+      "sigma_rule": "detections/sigma/dcsync.yml",
+      "rule_title": "Directory Replication Rights Exercised Outside Normal DC Replication",
+      "fixture_tests": {
+        "matching_passed": 1,
+        "matching_total": 1,
+        "non_matching_passed": 1,
+        "non_matching_total": 1
+      },
+      "covered": true
+    }
+  ],
+  "summary": {
+    "total_techniques": 6,
+    "covered": 6,
+    "coverage_pct": 100.0
+  }
+}

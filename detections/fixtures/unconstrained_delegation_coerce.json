@@ -1,0 +1,16 @@
+{
+  "matching": [
+    {
+      "EventID": "17",
+      "PipeName": "\\PIPE\\efsrpc",
+      "Image": "C:\\Windows\\System32\\svchost.exe"
+    }
+  ],
+  "non_matching": [
+    {
+      "EventID": "17",
+      "PipeName": "\\PIPE\\spoolss",
+      "_reason": "unrelated named pipe — not MS-EFSR/MS-LSAT"
+    }
+  ]
+}

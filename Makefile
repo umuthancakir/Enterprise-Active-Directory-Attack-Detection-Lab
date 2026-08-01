@@ -78,8 +78,8 @@ attack: check-env ## Run an attack chain (dry-run by default) against in-scope h
 	python3 -m attack.runner --scenario $(SCENARIO) $(if $(filter live,$(MODE)),--live,--dry-run)
 
 .PHONY: detections-test
-detections-test: ## Validate Sigma rules and run detection tests against captured telemetry
-	python3 -m detections.test_runner  ## STATUS: STUB — see ROADMAP.md Phase 4
+detections-test: ## Validate Sigma rules and prove each fires against fixture telemetry
+	python3 -m detections.test_runner
 
 # ---- platform -----------------------------------------------------------
 

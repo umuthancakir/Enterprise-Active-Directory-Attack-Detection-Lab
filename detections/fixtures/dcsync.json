@@ -1,0 +1,17 @@
+{
+  "matching": [
+    {
+      "EventID": "4662",
+      "Properties": "{...}{1131f6aa-9c07-11d1-f79f-00c04fc2dcd2}{...}",
+      "SubjectUserName": "MEM01$"
+    }
+  ],
+  "non_matching": [
+    {
+      "EventID": "4662",
+      "Properties": "{...}{1131f6aa-9c07-11d1-f79f-00c04fc2dcd2}{...}",
+      "SubjectUserName": "DC01$",
+      "_reason": "dc01's own legitimate replication traffic — excluded by filter_real_dc"
+    }
+  ]
+}

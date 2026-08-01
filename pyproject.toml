@@ -5,6 +5,7 @@ description = "Enterprise Active Directory Attack & Detection Lab — shared Pyt
 requires-python = ">=3.12"
 dependencies = [
     "pyyaml>=6.0",
+    "pysigma>=1.5.0",
 ]
 
 [project.optional-dependencies]
@@ -13,6 +14,11 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.10",
     "types-PyYAML",
+    # sigma-cli: optional, manual-use only (`sigma check`) — not used by
+    # detections/test_runner.py itself, which deliberately avoids it since
+    # its tag validator fetches MITRE ATT&CK data over the network. See
+    # that module's docstring.
+    "sigma-cli>=1.0",
 ]
 
 [tool.ruff]
@@ -26,12 +32,11 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 [tool.mypy]
 python_version = "3.12"
 # Only directories that actually contain .py files — mypy errors on an
-# empty directory rather than skipping it. Add detections/ back here once
-# Phase 4's detections/test_runner.py exists (see ROADMAP.md), same for
-# platform/backend/ once Phase 5 lands (it will likely get its own
-# pyproject.toml instead, per CI's separate `backend` job).
-files = ["attack", "scripts", "config/inventory"]
-exclude = ["attack/results", "attack/fixtures"]
+# empty directory rather than skipping it. platform/backend/ will likely
+# get its own pyproject.toml once Phase 5 lands (per CI's separate
+# `backend` job) rather than being added here.
+files = ["attack", "scripts", "config/inventory", "detections"]
+exclude = ["attack/results", "attack/fixtures", "detections/fixtures"]
 strict = true
 warn_unused_ignores = true
 

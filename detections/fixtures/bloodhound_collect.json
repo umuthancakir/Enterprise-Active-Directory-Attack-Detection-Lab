@@ -1,0 +1,17 @@
+{
+  "matching": [
+    {
+      "EventID": "1",
+      "Image": "C:\\Python312\\python.exe",
+      "CommandLine": "bloodhound-python -d eadadl.lab -u labadmin -p ******** -ns 10.42.1.4 -c All"
+    }
+  ],
+  "non_matching": [
+    {
+      "EventID": "1",
+      "Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+      "CommandLine": "powershell.exe -Command Get-Process",
+      "_reason": "unrelated process — no BloodHound/SharpHound signature in the command line"
+    }
+  ]
+}

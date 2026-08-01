@@ -1,0 +1,33 @@
+title: Named Pipe Access Consistent with Forced Authentication Coercion
+id: 13e6bf12-1416-41a3-9a76-8f3a0931ebcf
+status: test
+description: >
+  A process opened the \PIPE\efsrpc or \PIPE\lsarpc named pipe — the
+  MS-EFSR/MS-LSAT RPC interfaces abused by PetitPotam-style coercion
+  techniques to force a Domain Controller to authenticate to an
+  attacker-controlled host. Detects attack/techniques.py's
+  `unconstrained_delegation_coerce` technique, which exploits
+  docs/vulnerabilities.md item 3 (unconstrained delegation on mem01).
+references:
+  - https://attack.mitre.org/techniques/T1187/
+  - https://github.com/topotam/PetitPotam
+author: EADADL
+date: 2026-08-01
+tags:
+  - attack.lateral-movement
+  - attack.t1187
+logsource:
+  product: windows
+  category: pipe_created
+detection:
+  selection:
+    EventID: 17
+    PipeName|contains:
+      - 'efsrpc'
+      - 'lsarpc'
+  condition: selection
+falsepositives:
+  - Legitimate EFS (Encrypting File System) or LSA RPC activity — rare in
+    this lab's synthetic environment, more plausible in a real domain
+    with active EFS usage.
+level: high
