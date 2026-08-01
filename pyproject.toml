@@ -6,6 +6,13 @@ requires-python = ">=3.12"
 dependencies = [
     "pyyaml>=6.0",
     "pysigma>=1.5.0",
+    # detections/elastic_backend.py's pure Sigma->Lucene conversion — no
+    # pipeline needed, see that module's docstring. Kept a core dependency
+    # (not dev-only) since tests/test_elastic_backend.py exercises it in
+    # the default test suite; only the *live-cluster* half
+    # (detections/elastic_integration_check.py, needing the `elasticsearch`
+    # client below) is dev/manual-use-only.
+    "pysigma-backend-elasticsearch>=2.0",
 ]
 
 [build-system]
@@ -41,6 +48,12 @@ dev = [
     # its tag validator fetches MITRE ATT&CK data over the network. See
     # that module's docstring.
     "sigma-cli>=1.0",
+    # elasticsearch: official client, used only by
+    # detections/elastic_integration_check.py — a manual/optional script
+    # that needs a real reachable cluster, same "not part of the default
+    # CI-run test suite" pattern as sigma-cli above. See that module's
+    # docstring for why it's not wired into `make detections-test`.
+    "elasticsearch>=8.15,<9",
 ]
 
 [tool.ruff]

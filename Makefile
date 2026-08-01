@@ -86,6 +86,10 @@ attack-atomic: check-env ## Run one Atomic Red Team-schema test (dry-run only). 
 detections-test: ## Validate Sigma rules and prove each fires against fixture telemetry
 	python3 -m detections.test_runner
 
+.PHONY: detections-test-elastic
+detections-test-elastic: ## Prove Sigma rules fire against a REAL Elasticsearch cluster (needs ELASTICSEARCH_URL reachable — see detections/elastic_integration_check.py)
+	python3 -m detections.elastic_integration_check
+
 # ---- platform -----------------------------------------------------------
 #
 # Backend (platform/backend/) is fully built and tested (19 passing
