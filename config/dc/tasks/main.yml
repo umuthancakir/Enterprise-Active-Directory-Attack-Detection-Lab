@@ -1,0 +1,27 @@
+---
+# config/dc/tasks/main.yml
+#
+# STATUS: written but not run-tested — no local Windows/WinRM target to
+# execute against yet (infra/local hasn't been built, see ROADMAP.md).
+# Treat as a careful first draft.
+
+- name: Rename computer to {{ dc_hostname }}
+  ansible.windows.win_hostname:
+    name: "{{ dc_hostname }}"
+  register: rename_result
+
+- name: Reboot after rename if needed
+  ansible.windows.win_reboot:
+  when: rename_result.reboot_required
+
+- name: Promote to a new Active Directory forest
+  ansible.builtin.import_tasks: promote_forest.yml
+
+- name: Build synthetic OU structure and domain population
+  ansible.builtin.import_tasks: ou_structure.yml
+
+- name: Create synthetic users and groups
+  ansible.builtin.import_tasks: users_and_groups.yml
+
+- name: Apply deliberate misconfigurations (see docs/vulnerabilities.md)
+  ansible.builtin.import_tasks: misconfigs.yml

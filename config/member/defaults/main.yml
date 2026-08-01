@@ -1,0 +1,4 @@
+---
+# config/member/defaults/main.yml
+
+member_hostname: MEM01

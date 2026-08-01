@@ -1,0 +1,97 @@
+---
+# config/dc/tasks/misconfigs.yml
+#
+# Every task block below is numbered to match its row in
+# docs/vulnerabilities.md — do not add a misconfiguration here without a
+# corresponding row there (CONTRIBUTING.md). Misconfig 3 (unconstrained
+# delegation on mem01) lives in config/dc/tasks/post_join_misconfigs.yml
+# instead, since it needs mem01's AD computer object to exist first — see
+# that file and site.yml for the ordering. Misconfigs 5 and 8 are deferred
+# (need a 2nd non-DC Windows host — see docs/vulnerabilities.md).
+
+# --- Misconfig 1: Kerberoastable service account -----------------------
+
+- name: "[misconfig 1] Create Kerberoastable service account ({{ misconfig1_account }})"
+  microsoft.ad.user:
+    name: "{{ misconfig1_account }}"
+    path: "OU=ServiceAccounts,{{ lab_domain_dn }}"
+    password: "{{ misconfig1_password }}"
+    password_never_expires: true   # realistic for the "nobody rotates the SQL service account" pattern this row models
+    state: present
+    enabled: true
+
+- name: "[misconfig 1] Set SPN on {{ misconfig1_account }} (makes it Kerberoastable)"
+  ansible.windows.win_shell: |
+    Set-ADUser -Identity "{{ misconfig1_account }}" -ServicePrincipalNames @{Replace="{{ misconfig1_spn }}"}
+  changed_when: true   # Set-ADUser gives no clean idempotency signal over win_shell; safe to always report changed since -Replace to the same value is a no-op in AD itself
+
+# --- Misconfig 2: AS-REP roastable account ------------------------------
+
+- name: "[misconfig 2] Create AS-REP roastable account ({{ misconfig2_account }})"
+  microsoft.ad.user:
+    name: "{{ misconfig2_account }}"
+    path: "OU=ServiceAccounts,{{ lab_domain_dn }}"
+    password: "{{ lab_user_default_password }}"
+    password_never_expires: true
+    kerberos_encryption_types:
+      set: [aes128, aes256]
+    state: present
+    enabled: true
+
+- name: "[misconfig 2] Disable Kerberos pre-authentication on {{ misconfig2_account }}"
+  ansible.windows.win_shell: |
+    Set-ADAccountControl -Identity "{{ misconfig2_account }}" -DoesNotRequirePreAuth $true
+  changed_when: true
+
+# --- Misconfig 4: ACL abuse (GenericAll grant) --------------------------
+
+- name: "[misconfig 4] Grant {{ misconfig4_grantee }} GenericAll over {{ misconfig4_target_group }} (BloodHound-style ACL abuse path)"
+  ansible.windows.win_shell: |
+    $target = Get-ADGroup -Identity "{{ misconfig4_target_group }}"
+    $acl = Get-Acl -Path "AD:\$($target.DistinguishedName)"
+    $identity = New-Object System.Security.Principal.NTAccount("{{ misconfig4_grantee }}")
+    $alreadyPresent = $acl.Access | Where-Object {
+        $_.IdentityReference -eq $identity -and $_.ActiveDirectoryRights -eq "GenericAll"
+    }
+    if (-not $alreadyPresent) {
+        $rule = New-Object System.DirectoryServices.ActiveDirectoryAccessRule(
+            $identity, "GenericAll", "Allow"
+        )
+        $acl.AddAccessRule($rule)
+        Set-Acl -Path "AD:\$($target.DistinguishedName)" -AclObject $acl
+        Write-Output "changed"
+    } else {
+        Write-Output "already present"
+    }
+  register: misconfig4_result
+  changed_when: "'changed' in misconfig4_result.stdout"
+
+# --- Misconfig 6: GPO edit rights granted to a low-priv group -----------
+
+- name: "[misconfig 6] Ensure GPO {{ misconfig6_gpo_name }} exists"
+  ansible.windows.win_shell: |
+    if (-not (Get-GPO -Name "{{ misconfig6_gpo_name }}" -ErrorAction SilentlyContinue)) {
+        New-GPO -Name "{{ misconfig6_gpo_name }}" | Out-Null
+        Write-Output "created"
+    } else {
+        Write-Output "exists"
+    }
+  register: misconfig6_gpo_result
+  changed_when: "'created' in misconfig6_gpo_result.stdout"
+
+- name: "[misconfig 6] Link {{ misconfig6_gpo_name }} to {{ misconfig6_linked_ou }}"
+  ansible.windows.win_shell: |
+    New-GPLink -Name "{{ misconfig6_gpo_name }}" -Target "{{ misconfig6_linked_ou }}" -ErrorAction SilentlyContinue
+  changed_when: true
+
+- name: "[misconfig 6] Grant {{ misconfig6_grantee_group }} Edit rights on {{ misconfig6_gpo_name }}"
+  ansible.windows.win_shell: |
+    Set-GPPermission -Name "{{ misconfig6_gpo_name }}" -TargetName "{{ misconfig6_grantee_group }}" -TargetType Group -PermissionLevel GpoEdit
+  changed_when: true
+
+# --- Misconfig 7: plaintext credentials in a SYSVOL-adjacent script ----
+
+- name: "[misconfig 7] Deploy {{ misconfig7_script_name }} with hardcoded credentials into SYSVOL scripts"
+  ansible.windows.win_template:
+    src: map-network-drive.ps1.j2
+    dest: 'C:\Windows\SYSVOL\domain\scripts\{{ misconfig7_script_name }}'

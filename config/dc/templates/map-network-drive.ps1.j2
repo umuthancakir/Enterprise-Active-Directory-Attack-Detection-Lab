@@ -1,0 +1,19 @@
+# {{ misconfig7_script_name }}
+# Deployed to SYSVOL's scripts share so it's reachable at
+# \\{{ lab_domain_name }}\SYSVOL\{{ lab_domain_name }}\scripts\{{ misconfig7_script_name }}
+# (and mirrored to NETLOGON, which is the same physical folder).
+#
+# THIS IS docs/vulnerabilities.md ITEM 7, ON PURPOSE.
+# Hardcoded, plaintext service-account credentials in a logon/mapping
+# script is a real, common finding (T1552.001) — this file exists so
+# attack/ scenarios have a genuine instance of it to discover via SMB
+# enumeration of SYSVOL, not a hint or a comment about the pattern.
+
+$cred = New-Object System.Management.Automation.PSCredential(
+    "{{ misconfig7_fake_username }}",
+    (ConvertTo-SecureString "{{ misconfig7_fake_password }}" -AsPlainText -Force)
+)
+
+New-PSDrive -Name "F" -PSProvider FileSystem `
+    -Root "\\dc01.{{ lab_domain_name }}\FileShare" `
+    -Credential $cred -Persist

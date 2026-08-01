@@ -1,0 +1,31 @@
+---
+# config/site.yml
+#
+# Ordering matters and is NOT arbitrary — see the comment in
+# config/dc/tasks/post_join_misconfigs.yml. Running these three plays out of
+# order (e.g. misconfig-3 before mem01 has joined) fails loudly rather than
+# silently doing the wrong thing, but "fails loudly" still means don't do
+# it — always run this whole file, not individual roles with --limit,
+# unless you specifically know what you're skipping (see each role's
+# README.md).
+#
+# STATUS: written, not run-tested — see ROADMAP.md and each role's README.
+
+- name: Promote dc01 and build the domain (OUs, users/groups, misconfigs 1/2/4/6/7)
+  hosts: domain_controller
+  gather_facts: false
+  roles:
+    - dc
+
+- name: Domain-join mem01
+  hosts: member_server
+  gather_facts: false
+  roles:
+    - member
+
+- name: Apply post-join misconfig 3 (unconstrained delegation on mem01) from dc01
+  hosts: domain_controller
+  gather_facts: false
+  tasks:
+    - name: Run post-join misconfigs
+      ansible.builtin.import_tasks: dc/tasks/post_join_misconfigs.yml

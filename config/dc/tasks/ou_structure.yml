@@ -1,0 +1,12 @@
+---
+# config/dc/tasks/ou_structure.yml
+
+- name: Create organizational units
+  microsoft.ad.ou:
+    name: "{{ item.name }}"
+    path: "{{ item.path }}"
+    state: present
+    protect: false   # lab is ephemeral (SECURITY.md #4) — must be deletable on teardown
+  loop: "{{ ou_structure }}"
+  loop_control:
+    label: "{{ item.name }}"

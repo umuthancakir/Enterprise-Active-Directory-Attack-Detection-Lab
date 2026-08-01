@@ -1,0 +1,41 @@
+---
+# config/member/tasks/main.yml
+#
+# STATUS: written but not run-tested — same caveat as config/dc (no local
+# WinRM target yet, see ROADMAP.md).
+#
+# Misconfig 3 (unconstrained delegation on this host's AD computer object)
+# is NOT set here — it's applied from the DC after this play runs, since it
+# needs this host's computer object to already exist in AD. See
+# config/dc/tasks/post_join_misconfigs.yml and site.yml for the ordering.
+
+- name: Rename computer to {{ member_hostname }}
+  ansible.windows.win_hostname:
+    name: "{{ member_hostname }}"
+  register: rename_result
+
+- name: Reboot after rename if needed
+  ansible.windows.win_reboot:
+  when: rename_result.reboot_required
+
+- name: Point DNS resolution at dc01 (the domain's DNS server)
+  ansible.windows.win_dns_client:
+    adapter_names: '*'
+    ipv4_addresses:
+      - "{{ hostvars['dc01']['ansible_host'] }}"
+
+- name: Join the domain
+  microsoft.ad.membership:
+    dns_domain_name: "{{ lab_domain_name }}"
+    domain_admin_user: "{{ lab_domain_netbios }}\\{{ lab_admin_username }}"
+    domain_admin_password: "{{ lab_admin_password }}"
+    domain_ou_path: "OU=LabComputers,{{ lab_domain_dn }}"
+    state: domain
+    reboot: true
+  register: join_result
+
+- name: Wait for WinRM after domain join
+  ansible.builtin.wait_for_connection:
+    delay: 30
+    timeout: 600
+  when: join_result.reboot_required | default(false)

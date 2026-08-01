@@ -173,3 +173,57 @@ install them):**
 - AD DS promotion, domain join, OU/user/group creation, and the 6
   (of 8, with 2 deferred) implementable misconfigurations remain
   unimplemented Ansible work — next up this session.
+
+## 2026-08-01 — Session 1 continued: Ansible roles (config/dc, config/member)
+
+**Work done (still code-only — no local `ansible` install, same sudo
+blocker as Packer/QEMU; nothing here has run against a real host):**
+
+- `config/ansible.cfg`, `config/requirements.yml` (ansible.windows,
+  microsoft.ad, community.windows, ansible.posix collections),
+  `config/inventory/lab_scope_inventory.py` (dynamic inventory sourced
+  directly from `inventory/lab-scope.yaml` — deliberately the same file
+  the scope guard reads, so Ansible can't provision a host the attack
+  engine wouldn't be allowed to target, and vice versa), `config/group_vars/all.yml`
+  (credentials from `.env`, never hardcoded).
+- `config/dc/`: `tasks/promote_forest.yml` (AD DS + DNS feature install,
+  `microsoft.ad.domain` forest promotion, DC points its own DNS at
+  itself), `tasks/ou_structure.yml` + `tasks/users_and_groups.yml` (4 OUs,
+  6 synthetic users, 2 groups — population for recon realism, not just the
+  misconfig accounts), `tasks/misconfigs.yml` (implements
+  `docs/vulnerabilities.md` items 1, 2, 4, 6, 7), `tasks/post_join_misconfigs.yml`
+  (item 3 — unconstrained delegation on `mem01`, deliberately split out
+  because it needs `mem01`'s AD computer object to exist first).
+- `config/member/tasks/main.yml`: rename, point DNS at `dc01`
+  (`hostvars['dc01']['ansible_host']`), `microsoft.ad.membership` domain
+  join.
+- `config/site.yml`: wires the ordering dependency explicitly — dc01 play,
+  then mem01 play, then a third dc01 play for the post-join misconfig.
+  Documented (in both the playbook and `post_join_misconfigs.yml`) that
+  running roles individually with `--limit` skips real dependencies,
+  rather than leaving that as a silent trap.
+- `docs/vulnerabilities.md` updated: items 1/2/3/4/6/7 now say "Implemented
+  ... — not run-tested" instead of "Planned", pointing at the specific
+  task file each lives in.
+
+**Verification performed:** YAML syntax check (`yaml.safe_load`) on every
+new/changed file under `config/`, Jinja2 parse check on the SYSVOL script
+template, a smoke-test import of `lab_scope_inventory.py`'s
+`build_inventory()` against the current (unprovisioned) `lab-scope.yaml`
+(returns an empty inventory, as expected — no host has `provisioned: true`
+yet). **Not verified:** `ansible-lint`, and nothing has run against a real
+Windows/WinRM target — there isn't one yet.
+
+**Not done / explicitly deferred:**
+
+- No Ansible run has happened; no domain exists.
+- Misconfig 4's ACL-grant task uses inline PowerShell (`Get-Acl`/`Set-Acl`
+  against the `AD:` PSProvider) rather than a dedicated Ansible module —
+  flagged in ROADMAP.md as the piece most worth double-checking by hand,
+  since it's hand-rolled idempotency logic (check for an existing matching
+  ACE before adding) rather than a module's built-in state handling.
+- Items 5 and 8 remain deferred pending `wks01` reintroduction (unchanged
+  from the infra pivot).
+- `config/attacker/` and `config/siem/` roles (installing offensive
+  tooling and the Elastic/Wazuh stack, respectively) are still
+  unwritten — Phase 2/3 work, not attempted this session.

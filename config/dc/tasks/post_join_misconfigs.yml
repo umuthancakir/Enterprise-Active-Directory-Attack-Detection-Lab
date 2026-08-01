@@ -1,0 +1,15 @@
+---
+# config/dc/tasks/post_join_misconfigs.yml
+#
+# Misconfig 3 (docs/vulnerabilities.md #3): unconstrained Kerberos
+# delegation on mem01. Split out from misconfigs.yml because it needs
+# mem01's AD computer object to already exist, i.e. it must run in a play
+# against dc01 that executes AFTER the play that domain-joins mem01 — see
+# site.yml for the explicit ordering. Ansible would happily run this
+# out-of-order and just fail with "computer object not found"; the ordering
+# comment here is what actually prevents that, not any code-level guard.
+
+- name: "[misconfig 3] Enable unconstrained delegation on mem01's computer object"
+  ansible.windows.win_shell: |
+    Set-ADComputer -Identity "MEM01" -TrustedForDelegation $true
+  changed_when: true

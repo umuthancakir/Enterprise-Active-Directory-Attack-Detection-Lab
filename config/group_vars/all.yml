@@ -1,0 +1,18 @@
+---
+# config/group_vars/all.yml
+#
+# Credentials come from the environment (.env, see .env.example) — never
+# hardcoded here (SECURITY.md #5). Ansible must be run with these exported,
+# e.g. `set -a; source .env; set +a; ansible-playbook ...`.
+
+lab_admin_username: "{{ lookup('env', 'LAB_ADMIN_USERNAME') | default('labadmin', true) }}"
+lab_admin_password: "{{ lookup('env', 'ADMIN_PASSWORD') }}"
+
+lab_domain_name: "{{ lookup('env', 'LAB_DOMAIN_NAME') | default('eadadl.lab', true) }}"
+lab_domain_netbios: "{{ lookup('env', 'LAB_DOMAIN_NETBIOS') | default('EADADL', true) }}"
+lab_safe_mode_password: "{{ lookup('env', 'ADMIN_PASSWORD') }}"
+
+# Distinguished-name form of lab_domain_name, e.g. "eadadl.lab" ->
+# "DC=eadadl,DC=lab". Computed once here so every OU/user/group path in
+# config/dc uses the same derivation instead of repeating the split logic.
+lab_domain_dn: "DC={{ lab_domain_name.split('.') | join(',DC=') }}"

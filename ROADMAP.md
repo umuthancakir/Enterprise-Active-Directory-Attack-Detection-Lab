@@ -36,11 +36,12 @@ ADR 0004.
 | `generate_bundles.py` (.utm bundle assembly from a manual blank template) | ✅ | plist key names are best-effort, unverified against a real UTM install — see infra/local/README.md |
 | One-time blank UTM template creation (arm64 + x86_64) | ⬜ | manual GUI step, not yet performed |
 | `scripts/sync_scope.py` (local state + manual IP entry → lab-scope.yaml) | ✅ | written, not yet run (nothing built) |
-| AD DS role config + domain promotion (`config/dc/` Ansible) | ⬜ | |
-| Member domain join (`config/member/` Ansible) | ⬜ | |
-| Synthetic OU/users/groups | ⬜ | |
-| Deliberate misconfigs implemented (6 of 8 planned for this footprint — items 5/8 deferred, need `wks01`; see `docs/vulnerabilities.md`) | ⬜ | |
-| `make up` (build images + generate bundles) / manual VM boot / `make sync-scope` | ⬜ | requires local Packer/QEMU/Ansible — not run yet |
+| AD DS role config + domain promotion (`config/dc/` Ansible) | ✅ | written, not run-tested — no WinRM target yet |
+| Member domain join (`config/member/` Ansible) | ✅ | written, not run-tested |
+| Synthetic OU/users/groups | ✅ | `config/dc/tasks/ou_structure.yml`, `users_and_groups.yml` — not run-tested |
+| Deliberate misconfigs implemented (6 of 8 for this footprint: items 1,2,3,4,6,7; items 5/8 deferred, need `wks01`; see `docs/vulnerabilities.md`) | ✅ | all 6 written across `config/dc/tasks/misconfigs.yml` + `post_join_misconfigs.yml` — not run-tested |
+| `config/site.yml` (dc → member → post-join-misconfigs ordering) + dynamic inventory from `lab-scope.yaml` | ✅ | written, not run-tested |
+| `make up` (build images + generate bundles) / manual VM boot / `make sync-scope` / `ansible-playbook config/site.yml` | ⬜ | requires local Packer/QEMU/Ansible — not run yet |
 
 ## Phase 2 — Telemetry & detection pipeline
 
@@ -117,3 +118,10 @@ ADR 0004.
   also requires manually reading each guest's IP into
   `infra/local/discovered-ips.yaml` — see that file's `.example` for why
   this isn't automated either).
+- **Ansible roles are unvalidated against a real target.** `config/dc`,
+  `config/member`, and `config/site.yml` were written without
+  `ansible-lint` or a real WinRM-reachable Windows host to run against (no
+  local `ansible` install either — see the sudo blocker above). The
+  misconfig-4 ACL-grant PowerShell and the Kerberoasting/AS-REP-roasting
+  setup are the parts most worth re-checking by hand before trusting them,
+  since they're the core of what makes the lab useful.

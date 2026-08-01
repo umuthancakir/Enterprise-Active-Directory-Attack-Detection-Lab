@@ -1,0 +1,65 @@
+---
+# config/dc/defaults/main.yml
+#
+# Every misconfig_* variable here corresponds to a numbered row in
+# docs/vulnerabilities.md — keep the mapping obvious rather than clever.
+# Passwords on the deliberately-weak accounts (misconfig 1/2) are
+# intentionally crackable; that's the point of those two rows, not an
+# oversight. They're synthetic lab-only accounts (SECURITY.md #5), never
+# reused as real credentials anywhere.
+
+dc_hostname: DC01
+
+ou_structure:
+  - name: LabUsers
+    path: "{{ lab_domain_dn }}"
+  - name: LabComputers
+    path: "{{ lab_domain_dn }}"
+  - name: ServiceAccounts
+    path: "{{ lab_domain_dn }}"
+  - name: HelpDesk
+    path: "OU=LabUsers,{{ lab_domain_dn }}"
+
+# Synthetic "population" of the domain so recon (BloodHound collection,
+# `net user /domain`, etc.) has something realistic to look at, not just
+# the handful of accounts that matter for the misconfigs below.
+lab_users:
+  - { name: jsmith, given_name: J, surname: Smith, ou: LabUsers }
+  - { name: agarcia, given_name: A, surname: Garcia, ou: LabUsers }
+  - { name: mchen, given_name: M, surname: Chen, ou: LabUsers }
+  - { name: rkhan, given_name: R, surname: Khan, ou: LabUsers }
+  - { name: tnguyen, given_name: T, surname: Nguyen, ou: LabUsers }
+  - { name: helpdesk-jsmith, given_name: J, surname: Smith (Help Desk), ou: HelpDesk }
+
+lab_groups:
+  - name: HelpDesk-L1
+    members: [helpdesk-jsmith]
+  - name: Domain-Backups
+    members: []
+
+# Population accounts (lab_users above) get this password — they exist for
+# recon realism, not to individually demonstrate a weakness the way
+# misconfig1/misconfig2's accounts do. Still synthetic/lab-only.
+lab_user_default_password: "ChangeMe#2024"
+
+# --- Misconfig 1 (docs/vulnerabilities.md #1): Kerberoastable service account
+misconfig1_account: svc-sql
+misconfig1_spn: "MSSQLSvc/dc01.{{ lab_domain_name }}:1433"
+misconfig1_password: "Summer2024!"   # intentionally weak — see module docstring note above
+
+# --- Misconfig 2 (#2): AS-REP roastable account
+misconfig2_account: svc-legacy
+
+# --- Misconfig 4 (#4): ACL abuse — helpdesk-jsmith granted GenericAll over Domain-Backups
+misconfig4_grantee: "{{ lab_domain_netbios }}\\helpdesk-jsmith"
+misconfig4_target_group: Domain-Backups
+
+# --- Misconfig 6 (#6): GPO edit rights granted to a low-priv group
+misconfig6_gpo_name: "Lab-Workstation-Baseline"
+misconfig6_linked_ou: "OU=LabComputers,{{ lab_domain_dn }}"
+misconfig6_grantee_group: HelpDesk-L1
+
+# --- Misconfig 7 (#7): plaintext credentials in a SYSVOL-adjacent script
+misconfig7_script_name: map-network-drive.ps1
+misconfig7_fake_username: "{{ lab_domain_netbios }}\\svc-fileshare"
+misconfig7_fake_password: "FileShare#2024"   # intentionally weak/plaintext — that's the vulnerability

@@ -1,0 +1,49 @@
+---
+# config/dc/tasks/users_and_groups.yml
+#
+# Builds a small synthetic population (config/dc/defaults/main.yml's
+# lab_users/lab_groups) so recon techniques (BloodHound collection, `net
+# user /domain`, LDAP enumeration) in later attack/ scenarios have
+# realistic domain data to walk through, not just the handful of accounts
+# that exist specifically to demonstrate a misconfiguration.
+
+- name: Compute full DN for each named OU
+  ansible.builtin.set_fact:
+    ou_dn_by_name: "{{ ou_structure | items2dict(key_name='name', value_name='path') }}"
+
+- name: Create synthetic domain users
+  microsoft.ad.user:
+    name: "{{ item.name }}"
+    firstname: "{{ item.given_name }}"
+    surname: "{{ item.surname }}"
+    path: "OU={{ item.ou }},{{ ou_dn_by_name[item.ou] }}"
+    password: "{{ lab_user_default_password }}"
+    password_never_expires: true
+    state: present
+    enabled: true
+  loop: "{{ lab_users }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Create synthetic domain groups
+  microsoft.ad.group:
+    name: "{{ item.name }}"
+    scope: global
+    category: security
+    path: "OU=LabUsers,{{ lab_domain_dn }}"
+    state: present
+  loop: "{{ lab_groups }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Populate group membership
+  microsoft.ad.group:
+    name: "{{ item.name }}"
+    scope: global
+    category: security
+    members:
+      add: "{{ item.members }}"
+  loop: "{{ lab_groups }}"
+  when: item.members | length > 0
+  loop_control:
+    label: "{{ item.name }}"

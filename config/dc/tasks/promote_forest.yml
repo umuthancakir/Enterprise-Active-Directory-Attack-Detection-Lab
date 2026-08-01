@@ -1,0 +1,39 @@
+---
+# config/dc/tasks/promote_forest.yml
+#
+# Idempotent by construction: microsoft.ad.domain no-ops if the host is
+# already a domain controller for lab_domain_name (CONTRIBUTING.md's
+# "re-running provisioning must converge, not duplicate" standard).
+
+- name: Install AD Domain Services + DNS Windows features
+  ansible.windows.win_feature:
+    name:
+      - AD-Domain-Services
+      - DNS
+    include_management_tools: true
+    state: present
+
+- name: Promote to a new forest ({{ lab_domain_name }})
+  microsoft.ad.domain:
+    dns_domain_name: "{{ lab_domain_name }}"
+    domain_netbios_name: "{{ lab_domain_netbios }}"
+    safe_mode_password: "{{ lab_safe_mode_password }}"
+    install_dns: true
+    reboot: true
+  register: promote_result
+
+# microsoft.ad.domain reboots and waits for reconnect itself when
+# reboot: true and a promotion actually happened; this second wait only
+# matters on the (rare) path where the module reports a reboot is pending
+# but hasn't confirmed WinRM is back yet.
+- name: Wait for WinRM after forest promotion
+  ansible.builtin.wait_for_connection:
+    delay: 30
+    timeout: 900
+  when: promote_result.reboot_required | default(false)
+
+- name: Point this DC's own DNS resolution at itself
+  ansible.windows.win_dns_client:
+    adapter_names: '*'
+    ipv4_addresses:
+      - 127.0.0.1
