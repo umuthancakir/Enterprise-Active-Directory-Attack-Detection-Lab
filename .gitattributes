@@ -1,0 +1,15 @@
+# .gitattributes
+#
+# Marks documentation as linguist-documentation so GitHub's language
+# detection isn't dominated by the sheer volume of Markdown/prose in this
+# repo (governance docs, ADRs, playbooks, BUILD_LOG.md, ROADMAP.md,
+# handbook.txt) relative to the actual Python/Ansible/TypeScript that does
+# the work. Python (attack/, detections/, config/inventory/, scripts/,
+# platform/backend/) is the layer that's genuinely tested this build —
+# the repo's language stats should reflect that.
+
+*.md linguist-documentation
+docs/** linguist-documentation
+BUILD_LOG.md linguist-documentation
+ROADMAP.md linguist-documentation
+handbook.txt linguist-documentation
