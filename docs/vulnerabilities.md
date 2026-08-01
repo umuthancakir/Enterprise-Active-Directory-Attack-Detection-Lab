@@ -22,18 +22,22 @@ realistically, not invent new ones (see [SECURITY.md](../SECURITY.md) #3).
 | 3 | Member server configured for unconstrained Kerberos delegation | `mem01` | [T1558 — Steal or Forge Kerberos Tickets](https://attack.mitre.org/techniques/T1558/) (ticket capture after coerced auth via [T1187 — Forced Authentication](https://attack.mitre.org/techniques/T1187/)) | Implemented in `config/dc/tasks/post_join_misconfigs.yml` — not run-tested | [`detections/sigma/unconstrained_delegation_coerce.yml`](../detections/sigma/unconstrained_delegation_coerce.yml) — passes `make detections-test` against fixtures |
 | 4 | Low-privilege user granted `GenericAll`/`WriteDACL`/`ForceChangePassword` on a higher-privilege object (BloodHound-style ACL abuse path) | `dc01` (AD DACLs) | [T1098 — Account Manipulation](https://attack.mitre.org/techniques/T1098/); when it grants replication rights, escalates to [T1003.006 — DCSync](https://attack.mitre.org/techniques/T1003/006/) | Implemented in `config/dc/tasks/misconfigs.yml` — not run-tested | [`detections/sigma/acl_genericall_abuse.yml`](../detections/sigma/acl_genericall_abuse.yml) (the grant itself) + [`detections/sigma/dcsync.yml`](../detections/sigma/dcsync.yml) (if escalated to DCSync) — both pass `make detections-test` against fixtures |
 | 5 | Local administrator password reused across `mem01` and a workstation | `mem01`, `wks01` | [T1078.003 — Valid Accounts: Local Accounts](https://attack.mitre.org/techniques/T1078/003/), [T1550.002 — Pass the Hash](https://attack.mitre.org/techniques/T1550/002/) | **Deferred** — needs a 2nd non-DC Windows host, see note below | Not started — no Sigma rule (deferred alongside the misconfig itself) |
-| 6 | Low-privilege group granted edit rights on a GPO linked to a sensitive OU | `dc01` (Group Policy) | [T1484.001 — Domain Policy Modification: Group Policy Modification](https://attack.mitre.org/techniques/T1484/001/) | Implemented in `config/dc/tasks/misconfigs.yml` — not run-tested | Not started — no `attack/techniques.py` technique exercises this yet, so no Sigma rule exists either (see `telemetry/windows-audit-policy/README.md` "Not done") |
-| 7 | Credentials left in a plaintext script/config on a SYSVOL-adjacent share | `dc01` (SYSVOL) | [T1552.001 — Unsecured Credentials: Credentials In Files](https://attack.mitre.org/techniques/T1552/001/) | Implemented in `config/dc/tasks/misconfigs.yml` — not run-tested | Not started — no `attack/techniques.py` technique reads it yet, so no Sigma rule exists either |
+| 6 | Low-privilege group granted edit rights on a GPO linked to a sensitive OU | `dc01` (Group Policy) | [T1484.001 — Domain Policy Modification: Group Policy Modification](https://attack.mitre.org/techniques/T1484/001/) | Implemented in `config/dc/tasks/misconfigs.yml` — not run-tested | [`detections/sigma/gpo_edit_abuse.yml`](../detections/sigma/gpo_edit_abuse.yml) — passes `make detections-test` against fixtures; requires the SACL in `telemetry/windows-audit-policy/configure-gpo-sacl.ps1` |
+| 7 | Credentials left in a plaintext script/config on a SYSVOL-adjacent share | `dc01` (SYSVOL) | [T1552.001 — Unsecured Credentials: Credentials In Files](https://attack.mitre.org/techniques/T1552/001/) | Implemented in `config/dc/tasks/misconfigs.yml` — not run-tested | [`detections/sigma/sysvol_credential_read.yml`](../detections/sigma/sysvol_credential_read.yml) — passes `make detections-test` against fixtures; requires the filesystem SACL in `telemetry/windows-audit-policy/configure-sysvol-file-sacl.ps1` |
 | 8 | A synthetic Domain Admin has an active/cached session on a workstation-tier host | `wks01` | Enables [T1003.001 — OS Credential Dumping: LSASS Memory](https://attack.mitre.org/techniques/T1003/001/) after initial workstation compromise, feeding [T1021.002 — SMB/Windows Admin Shares](https://attack.mitre.org/techniques/T1021/002/) lateral movement | **Deferred** — needs a 2nd non-DC Windows host, see note below | Not started — no Sigma rule (deferred alongside the misconfig itself) |
 
 ## Design notes
 
-- Items 1–4 are the ones `attack/techniques.py`'s 6 techniques and 2 chains
-  exercise (Kerberoast/AS-REP roast for initial creds → ACL abuse for
-  privesc → unconstrained-delegation coercion for lateral movement → DCSync
-  for domain dominance), and each now has a Sigma rule in `detections/sigma/`
-  that passes `make detections-test` against fixtures — see the Detection
-  column above and `detections/README.md`.
+- Items 1–4 are exercised by `attack/chains.py`'s `domain_dominance` chain
+  (Kerberoast/AS-REP roast for initial creds → ACL abuse for privesc →
+  unconstrained-delegation coercion for lateral movement → DCSync for
+  domain dominance). Items 6–7 are exercised independently by the
+  `gpo_and_sysvol_abuse` chain (they don't depend on items 3/4's
+  delegation/ACL setup). All 6 of the implementable items now have both an
+  `attack/techniques.py` technique and a Sigma rule in `detections/sigma/`
+  that passes `make detections-test` against fixtures — 8/8 (100%)
+  coverage as of this pass — see the Detection column above and
+  `detections/README.md`.
 - **Items 5 and 8 are deferred, not planned, following the footprint trim in
   [ADR 0004](adr/0004-revert-to-local-utm.md).** Both originally depended on
   a `wks01` workstation distinct from `mem01`, so that "local admin reuse"

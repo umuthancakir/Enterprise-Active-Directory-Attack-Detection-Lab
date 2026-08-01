@@ -93,10 +93,10 @@ Security auditing, not Sysmon).
 | Item | Status | Notes |
 |---|---|---|
 | Sysmon config (`telemetry/sysmon/`) | ✅ | well-formed XML confirmed; not deployed/validated against a real Sysmon install |
-| Windows Security audit policy + SACLs for Kerberos/DCSync/ACL-abuse detection (`telemetry/windows-audit-policy/`) | ✅ | 3 PowerShell scripts, not run against a real domain; DCSync extended-rights GUIDs flagged for verification |
+| Windows Security audit policy + SACLs for Kerberos/DCSync/ACL-abuse/GPO/SYSVOL detection (`telemetry/windows-audit-policy/`) | ✅ | 5 PowerShell scripts (added `configure-gpo-sacl.ps1` + `configure-sysvol-file-sacl.ps1` to close the misconfig 6/7 detection gap — see Phase 4), not run against a real domain; DCSync extended-rights GUIDs flagged for verification |
 | Windows Event Forwarding (`telemetry/wef/`) | ✅ | subscription XML well-formed; GPO/wecutil setup documented but manual, not yet in Ansible |
 | SIEM shipping — Elastic (`telemetry/winlogbeat/`, `telemetry/elastic/`) | ✅ | winlogbeat.yml + docker-compose + index template, all syntax-validated (YAML/JSON parse); not run against a real Elasticsearch cluster |
-| SIEM shipping — Wazuh/Splunk (alternate `SIEM_BACKEND` values) | ⬜ | declared in `.env.example`, no config exists — Elastic only |
+| SIEM shipping — Wazuh/Splunk (alternate `SIEM_BACKEND` values) | ⬜ | **deliberately deferred** — declared in `.env.example`, no config exists. Per operator instruction, held until at least one SIEM backend (Elastic) is validated end-to-end against a live lab, rather than building a second unvalidated backend in parallel |
 | Baseline dashboards proving events land (`telemetry/dashboards/`) | 🚧 | `baseline-queries.md` (raw KQL/DSL, the reliable version) done; `baseline-dashboard.ndjson` is a hand-authored, **not import-tested** Kibana export — see that directory's README for why the queries are the artifact to trust first |
 | Wired into `config/dc`/`config/member`/`config/siem` Ansible | ⬜ | everything above is currently a manual/documented procedure, not automated — tracked follow-up |
 
@@ -112,8 +112,8 @@ path for "real" runs.
 | Item | Status | Notes |
 |---|---|---|
 | Atomic technique runner (`attack/runner.py`) | ✅ | dry-run mode fully tested (11 passing tests); live mode implemented, unexercised |
-| Technique registry (`attack/techniques.py`) — 6 techniques | ✅ | Kerberoasting, AS-REP roasting, BloodHound collection, ACL abuse, unconstrained-delegation coercion, DCSync |
-| Attack chains (`attack/chains.py`) — 2 chains | ✅ | `credential_harvest` (recon → cred access) and `domain_dominance` (recon → privesc → lateral movement → domain dominance) |
+| Technique registry (`attack/techniques.py`) — 8 techniques | ✅ | Kerberoasting, AS-REP roasting, BloodHound collection, ACL abuse, unconstrained-delegation coercion, DCSync, GPO edit-rights abuse, SYSVOL credential read — one per implementable misconfig (items 1,2,3,4,6,7) |
+| Attack chains (`attack/chains.py`) — 3 chains | ✅ | `credential_harvest` (recon → cred access), `domain_dominance` (recon → privesc → lateral movement → domain dominance), `gpo_and_sysvol_abuse` (recon → GPO persistence abuse → credential exposure, independent of the other two) |
 | ATT&CK ID + reference tagging | ✅ | every technique cites a `T####[.###]` ID + `attack.mitre.org` URL; asserted by a test |
 | Every target resolved through the Phase-1 scope guard before any tool runs | ✅ | resolved up front for the whole chain, fail-closed, no partial runs — tested, and verified live: `make attack SCENARIO=credential_harvest` against the real (unprovisioned) `inventory/lab-scope.yaml` correctly refuses (`REFUSED: No attackable host with role 'domain_controller'...`) |
 | Result schema (`attack/finding.py`: `Finding`) + persistence (`attack/results/*.json`, gitignored) | ✅ | tested |
@@ -132,11 +132,11 @@ language) against synthetic event dicts.
 
 | Item | Status | Notes |
 |---|---|---|
-| Sigma rules per exercised technique (`detections/sigma/`) | ✅ | 6 rules, one per `attack/techniques.py` technique — all pass `sigma-cli`'s `sigma check` (0 issues) and pySigma's own parse |
-| Rule tests against telemetry fixtures (`detections/fixtures/`, `detections/matcher.py`) | ✅ | every rule proven against ≥1 matching + ≥1 non_matching synthetic event (12 unit tests in `tests/test_matcher.py`, integration tests in `tests/test_detections_runner.py`) — **not** tested against real telemetry, no lab exists yet |
+| Sigma rules per exercised technique (`detections/sigma/`) | ✅ | 8 rules, one per `attack/techniques.py` technique — all pass `sigma-cli`'s `sigma check` (0 issues) and pySigma's own parse |
+| Rule tests against telemetry fixtures (`detections/fixtures/`, `detections/matcher.py`) | ✅ | every rule proven against ≥1 matching + ≥1 non_matching synthetic event, `tests/test_matcher.py` + `tests/test_detections_runner.py` — **not** tested against real telemetry, no lab exists yet |
 | CI detection validation | ✅ | `.github/workflows/ci.yml`'s `detections-test` job runs `python3 -m detections.test_runner` and uploads `coverage_matrix.json` as a build artifact |
-| Attack→detection coverage matrix (`detections/coverage.py`, `detections/coverage_matrix.json`) | ✅ | 6/6 techniques covered (100%), regenerated and committed every `make detections-test` run — feeds the Phase 5 heatmap (not built yet) |
-| Detections for misconfigs 6 and 7 | ⬜ | no `attack/techniques.py` technique exercises the GPO edit-rights abuse or SYSVOL credential read yet, so no Sigma rule exists for either — see `docs/vulnerabilities.md`'s Detection column |
+| Attack→detection coverage matrix (`detections/coverage.py`, `detections/coverage_matrix.json`) | ✅ | **8/8 techniques covered (100%)**, regenerated and committed every `make detections-test` run — feeds the Phase 5 heatmap |
+| Detections for misconfigs 6 and 7 | ✅ | `gpo_edit_abuse` (T1484.001, requires `telemetry/windows-audit-policy/configure-gpo-sacl.ps1`) and `sysvol_credential_read` (T1552.001, requires `configure-sysvol-file-sacl.ps1` — a filesystem SACL, not an AD one) — closes the coverage-matrix gap flagged in the previous pass |
 
 ## Phase 5 — Platform
 
@@ -163,7 +163,7 @@ same confidence. See `platform/README.md`.
 
 | Item | Status | Notes |
 |---|---|---|
-| NIST SP 800-61 aligned IR playbooks (`ir/playbooks/`) | ✅ | 5 playbooks (Kerberoasting, AS-REP roasting, ACL abuse, unconstrained delegation, DCSync), each citing its Sigma rule/telemetry/`docs/vulnerabilities.md` item |
+| NIST SP 800-61 aligned IR playbooks (`ir/playbooks/`) | ✅ | 7 playbooks (Kerberoasting, AS-REP roasting, ACL abuse, unconstrained delegation, DCSync, GPO edit-rights abuse, SYSVOL credential exposure), each citing its Sigma rule/telemetry/`docs/vulnerabilities.md` item |
 | Threat-hunting notebooks (`ir/notebooks/`) | ✅ | 1 notebook, 5 hunts (one per detected technique), built + schema-validated via `nbformat` — **not run** against a real cluster |
 | SOAR-style response automation hooks (`ir/automation/`) | ✅ | `responder.py`, 7 passing tests — dry-run only by design (see `ir/automation/README.md` "Design"), reuses the same scope guard as `attack/runner.py` |
 

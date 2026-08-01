@@ -48,7 +48,14 @@ $categories = @(
     # User Account Management: events 4720/4724/4738 etc — account
     # creation/password reset, relevant to item 4's password-reset abuse
     # path and to any credential-based persistence a chain establishes.
-    "User Account Management"
+    "User Account Management",
+
+    # File System: event 4663 (an attempt was made to access an object) —
+    # needed for item 7 (plaintext creds planted in SYSVOL): only fires on
+    # files with a SACL, see configure-sysvol-file-sacl.ps1. Distinct from
+    # "Directory Service Access" above, which covers AD objects, not the
+    # filesystem.
+    "File System"
 )
 
 foreach ($category in $categories) {

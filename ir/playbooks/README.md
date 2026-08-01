@@ -14,12 +14,17 @@ being generic incident-response boilerplate.
 | [`acl-abuse.md`](acl-abuse.md) | Directory ACL abuse | T1098 | Medium (context-dependent) |
 | [`unconstrained-delegation.md`](unconstrained-delegation.md) | Forced-auth coercion | T1187 | High |
 | [`dcsync.md`](dcsync.md) | DCSync | T1003.006 | **Critical — full domain compromise** |
+| [`gpo-abuse.md`](gpo-abuse.md) | GPO edit-rights abuse | T1484.001 | High (blast radius: every linked computer) |
+| [`sysvol-credential-exposure.md`](sysvol-credential-exposure.md) | SYSVOL plaintext credential read | T1552.001 | High |
 
 `acl-abuse.md` → `unconstrained-delegation.md` → `dcsync.md` model this
 lab's `domain_dominance` attack chain end to end (see
 [`attack/chains.py`](../../attack/chains.py)) — read them together when
 working an incident that spans more than one stage, not as independent
-events.
+events. `gpo-abuse.md` and `sysvol-credential-exposure.md` correspond to
+the `gpo_and_sysvol_abuse` chain instead — independent of
+`domain_dominance`, since items 6/7 don't depend on items 3/4's
+delegation/ACL setup.
 
 No playbook exists yet for `bloodhound_collect` (recon) — enumeration
 alone rarely warrants a full IR response; see

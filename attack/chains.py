@@ -45,4 +45,18 @@ CHAINS: dict[str, Chain] = {
             "dcsync",
         ),
     ),
+    "gpo_and_sysvol_abuse": Chain(
+        id="gpo_and_sysvol_abuse",
+        description=(
+            "Recon, then abuse granted GPO edit rights for persistence and read "
+            "plaintext credentials planted in SYSVOL. docs/vulnerabilities.md "
+            "items 6-7 — independent of the domain_dominance chain, since items "
+            "6/7 don't depend on items 3/4's delegation/ACL setup."
+        ),
+        technique_ids=(
+            "bloodhound_collect",
+            "gpo_edit_abuse",
+            "sysvol_credential_read",
+        ),
+    ),
 }

@@ -1,0 +1,9 @@
+{
+  "summary": "helpdesk-jsmith used their granted GPO edit rights to add a malicious scheduled-task computer preference to Lab-Workstation-Baseline — see docs/vulnerabilities.md item 6.",
+  "details": {
+    "gpo_name": "Lab-Workstation-Baseline",
+    "actor": "helpdesk-jsmith",
+    "action": "AddComputerTask",
+    "task_name": "UpdateCache"
+  }
+}

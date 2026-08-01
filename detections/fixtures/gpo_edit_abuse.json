@@ -1,0 +1,17 @@
+{
+  "matching": [
+    {
+      "EventID": "5136",
+      "ObjectClass": "groupPolicyContainer",
+      "SubjectUserName": "helpdesk-jsmith"
+    }
+  ],
+  "non_matching": [
+    {
+      "EventID": "5136",
+      "ObjectClass": "group",
+      "SubjectUserName": "helpdesk-jsmith",
+      "_reason": "a group membership change, not a GPO modification"
+    }
+  ]
+}

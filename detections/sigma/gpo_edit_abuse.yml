@@ -1,0 +1,35 @@
+title: Group Policy Container Object Modified
+id: de4c5695-e484-438c-aafa-5ef8b4eccb19
+status: test
+description: >
+  A Group Policy object's AD container (groupPolicyContainer) was
+  modified. Requires the SACL from
+  telemetry/windows-audit-policy/configure-gpo-sacl.ps1 — without it, no
+  event is produced for GPO changes at all. Detects
+  attack/techniques.py's `gpo_edit_abuse` technique, which exploits
+  docs/vulnerabilities.md item 6 (helpdesk-jsmith's granted edit rights on
+  Lab-Workstation-Baseline).
+references:
+  - https://attack.mitre.org/techniques/T1484/001/
+author: EADADL
+date: 2026-08-01
+tags:
+  - attack.persistence
+  - attack.defense-evasion
+  - attack.t1484.001
+logsource:
+  product: windows
+  service: security
+detection:
+  selection:
+    EventID: 5136
+    ObjectClass: 'groupPolicyContainer'
+  condition: selection
+falsepositives:
+  - Any legitimate GPO administration matches this rule too — it is
+    deliberately unfiltered by actor, since this lab's GPO population is
+    small enough that every change is worth reviewing. In a larger
+    environment, correlate SubjectUserName against a known-GPO-admins
+    list and a change-management record before treating a hit as
+    suspicious.
+level: medium

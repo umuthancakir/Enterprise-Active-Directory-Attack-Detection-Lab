@@ -718,3 +718,79 @@ job edit.
   described as passing throughout this entire build log, worth stating
   explicitly here at the end rather than only implicitly through "no
   remote" mentions scattered earlier.
+
+## 2026-08-01 — Session 2: close the misconfig 6/7 detection gap
+
+**Operator handed off a new instruction set.** First item: push to a real
+GitHub remote and get an actual CI run (as opposed to every prior "CI
+passes" claim, which was local reproduction only — see the last entry of
+the previous session). The push command included a literal
+`<YOUR_GITHUB_REPO_URL>` placeholder rather than a real URL, and there's
+no `gh` CLI here to create a repo (would need Homebrew, same no-sudo
+blocker as everything else). Flagged this to the operator and asked for
+either a real URL or instruction to skip it — did not push, did not
+guess/fabricate a URL. Proceeded with the rest of the requested work,
+which doesn't depend on the remote.
+
+**Work done: Sigma detections for misconfigs 6 and 7 (closing the
+coverage-matrix gap flagged at the end of the previous session):**
+
+- `telemetry/windows-audit-policy/configure-audit-policy.ps1`: added the
+  **File System** audit subcategory (previously only had AD-object-facing
+  subcategories — item 7's detection needs event 4663, a filesystem
+  event, which none of the existing subcategories cover).
+- `telemetry/windows-audit-policy/configure-gpo-sacl.ps1` (new): SACL on
+  the `Lab-Workstation-Baseline` GPO's AD object
+  (`groupPolicyContainer`), mirroring `configure-object-sacls.ps1`'s
+  pattern for item 4.
+- `telemetry/windows-audit-policy/configure-sysvol-file-sacl.ps1` (new):
+  a **filesystem** SACL (not an AD one) on the planted
+  `map-network-drive.ps1` script for `ReadData` — the first script in
+  this directory that uses the filesystem provider instead of the `AD:`
+  PSDrive, called out explicitly in its own header comment so it isn't
+  mistaken for following the other scripts' pattern.
+- `attack/techniques.py`: two new techniques — `gpo_edit_abuse`
+  (T1484.001, tool: SharpGPOAbuse) and `sysvol_credential_read`
+  (T1552.001, tool: plain `Get-Content`, since this one's a documented
+  technique step rather than needing a named tool). `attack/chains.py`:
+  a third chain, `gpo_and_sysvol_abuse`, independent of `domain_dominance`
+  since items 6/7 don't depend on items 3/4's delegation/ACL setup.
+- `detections/sigma/gpo_edit_abuse.yml` (event 5136,
+  `ObjectClass=groupPolicyContainer`) and
+  `detections/sigma/sysvol_credential_read.yml` (event 4663,
+  `ObjectName` ending in the planted script's filename), each with
+  `detections/fixtures/*.json` matching + non_matching cases.
+- `ir/playbooks/gpo-abuse.md` and `ir/playbooks/sysvol-credential-exposure.md`
+  — same NIST SP 800-61 structure as the existing 5, for consistency with
+  the established pattern (not explicitly requested, but a small
+  low-cost extension that keeps `ir/playbooks/README.md`'s table honest
+  now that these two techniques have Sigma rules like the others do).
+
+**Caught and fixed while verifying:** two existing tests had hardcoded
+counts that the new techniques/chain broke —
+`platform/backend/tests/test_scenarios.py` asserted the exact 2-chain set
+(now 3), and `platform/backend/tests/test_coverage.py` asserted
+`total_techniques == 6` (now 8). Fixed the first by updating the expected
+set; fixed the second by comparing against `len(attack.techniques.TECHNIQUES)`
+dynamically instead of a hardcoded number, so it won't go stale the next
+time a technique is added the way the hardcoded `6` just did.
+
+**Verification performed:** `make detections-test` — **8/8 techniques
+covered (100%)**. Root `pytest` — 62/62 passing (unchanged count; the
+generic/registry-driven tests picked up the 2 new techniques
+automatically without needing new test functions). Backend `pytest` —
+19/19 passing after the two fixes above. `ruff`/`mypy --strict` clean at
+both the root and in `platform/backend/`. `ansible-lint`/
+`ansible-playbook --syntax-check` unaffected (no `config/` changes this
+pass).
+
+**Not done / explicitly deferred:**
+
+- No push to a real GitHub remote yet — waiting on the operator for a
+  real URL (see above). No CI has run for real as a result.
+- Wazuh/Splunk SIEM backends deliberately not started — per operator
+  instruction, held until Elastic is validated end-to-end against a live
+  lab, rather than building a second unvalidated backend alongside the
+  first.
+- Atomic Red Team integration not yet started — next in the requested
+  order.

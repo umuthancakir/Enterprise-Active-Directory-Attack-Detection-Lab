@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-01T01:46:08.398495+00:00",
+  "generated_at": "2026-08-01T14:43:36.999200+00:00",
   "techniques": [
     {
       "technique_id": "bloodhound_collect",
@@ -78,11 +78,37 @@
         "non_matching_total": 1
       },
       "covered": true
+    },
+    {
+      "technique_id": "gpo_edit_abuse",
+      "attack_id": "T1484.001",
+      "sigma_rule": "detections/sigma/gpo_edit_abuse.yml",
+      "rule_title": "Group Policy Container Object Modified",
+      "fixture_tests": {
+        "matching_passed": 1,
+        "matching_total": 1,
+        "non_matching_passed": 1,
+        "non_matching_total": 1
+      },
+      "covered": true
+    },
+    {
+      "technique_id": "sysvol_credential_read",
+      "attack_id": "T1552.001",
+      "sigma_rule": "detections/sigma/sysvol_credential_read.yml",
+      "rule_title": "SYSVOL Planted-Credential Script Read",
+      "fixture_tests": {
+        "matching_passed": 1,
+        "matching_total": 1,
+        "non_matching_passed": 1,
+        "non_matching_total": 1
+      },
+      "covered": true
     }
   ],
   "summary": {
-    "total_techniques": 6,
-    "covered": 6,
+    "total_techniques": 8,
+    "covered": 8,
     "coverage_pct": 100.0
   }
 }
