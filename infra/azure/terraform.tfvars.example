@@ -1,0 +1,15 @@
+# Copy to terraform.tfvars and fill in. terraform.tfvars is gitignored —
+# never commit real values (see infra's inherited root .gitignore).
+
+azure_subscription_id = "00000000-0000-0000-0000-000000000000"
+region                 = "eastus"
+resource_group_name   = "eadadl-lab-rg"
+
+# Your own IP (or a small trusted range) — NOT 0.0.0.0/0. This is who can
+# reach Azure Bastion's HTTPS endpoint to manage the lab.
+operator_source_ips = ["203.0.113.10/32"]
+
+# Leave admin_password unset to have Terraform generate a random one
+# (recommended — see random_password.admin in main.tf). Only set this if you
+# have a specific reason to pin it, and never commit the real value.
+# admin_password = null

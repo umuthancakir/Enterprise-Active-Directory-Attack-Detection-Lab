@@ -23,15 +23,19 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started · 🧪 STUB (present bu
 
 | Item | Status | Notes |
 |---|---|---|
-| Terraform azurerm: resource group, vnet, NSGs (no internet route) | ⬜ | code only, no `apply`, per operator instruction |
-| Domain Controller VM + AD DS role config | ⬜ | |
-| Member server(s) | ⬜ | |
-| Workstation | ⬜ | |
-| Attacker box (Kali-based) | ⬜ | |
-| SIEM host | ⬜ | |
+| Terraform azurerm: resource group, vnet, NSGs (no internet route) | ✅ | code written, not yet `apply`'d or `validate`'d (no local terraform binary) — see ADR 0003 |
+| Azure Bastion (sole inbound mgmt path, no public IP on lab hosts) | ✅ | code written, not yet applied |
+| Domain Controller VM (Terraform) | ✅ | VM only — AD DS role config below |
+| Member server VM (Terraform) | ✅ | VM only |
+| Workstation VM (Terraform) | ✅ | VM only |
+| Attacker box VM (Kali, Terraform) | ✅ | VM only; marketplace agreement handled in code |
+| SIEM host VM (Terraform) | ✅ | VM only |
+| `scripts/sync_scope.py` (terraform output → lab-scope.yaml) | ✅ | written, not yet run (nothing provisioned) |
+| AD DS role config + domain promotion (`config/dc/` Ansible) | ⬜ | |
+| Member/workstation domain join (`config/member/`, `config/workstation/`) | ⬜ | |
 | Synthetic OU/users/groups | ⬜ | |
-| Deliberate misconfigs documented in `docs/vulnerabilities.md` | ⬜ | |
-| `make up` / `make down` actually provision/destroy | ⬜ | requires Azure credentials — not run yet |
+| Deliberate misconfigs implemented (design documented in `docs/vulnerabilities.md`, 8 items, all "Planned") | ⬜ | |
+| `make up` / `make down` actually provision/destroy | ⬜ | requires Azure credentials + local terraform — not run yet |
 
 ## Phase 2 — Telemetry & detection pipeline
 
@@ -97,3 +101,8 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started · 🧪 STUB (present bu
   is being scaffolded as code without running `az login` or `terraform
   apply`. Live provisioning is blocked on the operator providing a
   subscription ID/region and completing `az login` when ready.
+- **Terraform code is unvalidated.** No `terraform fmt`/`validate`/`plan`
+  has been run against `infra/azure/` — there's no local terraform binary
+  (see blocker above). Treat it as a careful first draft, not
+  proven-correct, until CI's `terraform-validate` job runs on push or it's
+  validated from a machine with terraform installed.
