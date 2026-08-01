@@ -1,0 +1,27 @@
+# attack/integrations/atomics/T1018.yaml
+#
+# Modeled on the public Atomic Red Team project's YAML schema — hand-written
+# for this repo's local catalog, not copied from the live upstream file.
+# See attack/integrations/README.md.
+
+attack_technique: T1018
+display_name: Remote System Discovery
+atomic_tests:
+  - name: List domain computers via net.exe
+    auto_generated_guid: e41374cd-3b7e-4bdc-b4bd-42594b440539
+    description: |
+      Lists domain-joined computer accounts using net.exe — the
+      lowest-effort way to discover dc01/mem01 exist before targeting
+      either with a heavier tool.
+    supported_platforms:
+      - windows
+    input_arguments:
+      domain_name:
+        description: Domain to query
+        type: string
+        default: "eadadl.lab"
+    executor:
+      name: command_prompt
+      elevation_required: false
+      command: |
+        net view /domain:#{domain_name}

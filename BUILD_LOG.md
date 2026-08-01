@@ -794,3 +794,54 @@ pass).
   first.
 - Atomic Red Team integration not yet started — next in the requested
   order.
+
+## 2026-08-01 — Session 2 continued: Atomic Red Team integration (mock-mode)
+
+**Work done:**
+
+- `attack/integrations/atomic_red_team.py`: parses the public Atomic Red
+  Team project's YAML schema (`attack_technique`, `display_name`,
+  `atomic_tests[].{name, description, supported_platforms,
+  input_arguments, executor}`) and renders its real `#{argument}`
+  templating syntax. This is a parser for the schema, not a vendored copy
+  of the upstream project — explicitly scoped that way in the module and
+  README docstrings, since pulling in the actual repo (thousands of
+  files, independently licensed) is a bigger decision than this pass
+  makes unilaterally.
+- `attack/integrations/atomics/`: 3 hand-written local catalog files
+  (T1087.002 domain-admin enumeration, T1069.002 domain-group
+  enumeration, T1018 domain-computer enumeration) — all standard, very
+  well-known `net.exe` recon one-liners, written from general knowledge
+  rather than fetched from the live repository. Flagged explicitly as
+  such, same honesty pattern as the DCSync GUIDs from an earlier session.
+- `attack/integrations/atomic_runner.py`: `run_atomic_test()` resolves a
+  target through the exact same `ScopeGuard` as `attack/runner.py`, then
+  emits the exact same `Finding` schema — an atomic-test run and a
+  hand-modeled-technique run are indistinguishable downstream. Dry-run
+  only, no live-execution path at all — a stricter boundary than
+  `attack/runner.py`'s unexercised-but-present `--live`, since this
+  integration's job is proving the plumbing (parse → render → scope-guard
+  → Finding) works, not executing anything.
+- `make attack-atomic TECHNIQUE=<id>` — verified live against the real
+  repo: refuses with the same `REFUSED: No attackable host...` message as
+  `make attack`, since nothing is provisioned.
+- `tests/test_atomic_red_team.py`: 10 tests — schema parsing, command
+  rendering (default value, override, and the missing-argument error
+  case), and the scope-guard safety property (refuses against an
+  unprovisioned target, same as everywhere else in this project).
+
+**Verification performed:** `pytest` — 72/72 passing at the repo root (10
+new). `ruff`/`mypy --strict` — clean, 19 source files. Manually ran
+`make attack-atomic TECHNIQUE=T1087.002` against the real, unprovisioned
+`inventory/lab-scope.yaml` and confirmed the expected refusal.
+
+**Not done / explicitly deferred:**
+
+- No real upstream Atomic Red Team files have been tested against the
+  parser — only the 3 hand-written local ones. The parser targets ART's
+  documented schema, but "should handle a real file" is an untested claim
+  until someone actually tries one.
+- Caldera integration not attempted at all.
+- No live-execution mode, by design (see `attack/integrations/README.md`
+  "Design") — this is a permanent boundary for this integration, not a
+  temporary gap.

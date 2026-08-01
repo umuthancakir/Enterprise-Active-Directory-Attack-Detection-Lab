@@ -77,6 +77,11 @@ attack: check-env ## Run an attack chain (dry-run by default) against in-scope h
 	@test -n "$(SCENARIO)" || (echo "Usage: make attack SCENARIO=<name> [MODE=live]" && exit 1)
 	python3 -m attack.runner --scenario $(SCENARIO) $(if $(filter live,$(MODE)),--live,--dry-run)
 
+.PHONY: attack-atomic
+attack-atomic: check-env ## Run one Atomic Red Team-schema test (dry-run only). Usage: make attack-atomic TECHNIQUE=T1087.002
+	@test -n "$(TECHNIQUE)" || (echo "Usage: make attack-atomic TECHNIQUE=<attack-id>" && exit 1)
+	python3 -m attack.integrations.atomic_runner --technique $(TECHNIQUE)
+
 .PHONY: detections-test
 detections-test: ## Validate Sigma rules and prove each fires against fixture telemetry
 	python3 -m detections.test_runner

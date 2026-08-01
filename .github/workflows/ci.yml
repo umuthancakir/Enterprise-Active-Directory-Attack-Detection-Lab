@@ -86,6 +86,13 @@ jobs:
             exit 1
           fi
           echo "OK: runner correctly refused (see attack/lib/scope_guard.py, ADR 0002)."
+      - name: "Safety smoke-test: atomic runner refuses against the real (unprovisioned) lab-scope.yaml"
+        run: |
+          if python3 -m attack.integrations.atomic_runner --technique T1087.002; then
+            echo "FAIL: atomic runner should have refused — no host is provisioned in inventory/lab-scope.yaml on this branch." >&2
+            exit 1
+          fi
+          echo "OK: atomic runner correctly refused (same scope guard as attack/runner.py)."
 
   detections-test:
     name: Sigma rule validation + fixture-based detection tests

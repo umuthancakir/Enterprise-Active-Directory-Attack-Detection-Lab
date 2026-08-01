@@ -33,7 +33,14 @@ truth for what actually works. As of this handbook:
         see the repo-wide test count in the Phase 7 summary below).
         `MODE=live` (real tool execution) is implemented
         but unexercised - there is no lab or installed offensive tooling to
-        run it against yet.
+        run it against yet. 8 techniques, 3 chains (added gpo_edit_abuse,
+        sysvol_credential_read, and the gpo_and_sysvol_abuse chain in
+        session 2 to close a detection-coverage gap). Also gained an
+        Atomic Red Team schema integration (attack/integrations/) in
+        session 2: parses ART's real public YAML schema, small
+        hand-written local catalog (3 recon techniques), dry-run only,
+        same scope guard - `make attack-atomic TECHNIQUE=T1087.002`.
+        NOT a vendored copy of the upstream ART project.
   * Phase 2 (telemetry: Sysmon, Windows audit policy/SACLs, WEF, ......... WRITTEN,
     Elastic shipping, baseline queries)                                  NOT DEPLOYED.
         All config (telemetry/sysmon/, telemetry/windows-audit-policy/,
@@ -88,6 +95,10 @@ truth for what actually works. As of this handbook:
         reproduces what was verified locally. 81 pytest tests passing
         total (62 at the repo root, 19 in platform/backend/), ruff/mypy
         --strict clean throughout everywhere Python tooling could run.
+        [as of end of session 1 - see BUILD_LOG.md session 2 for what's
+        changed since: misconfig 6/7 detection coverage closed (8/8) and
+        the Atomic Red Team integration added, bringing the total to 91
+        passing tests (72 root + 19 backend).]
 
 So the install steps below describe the intended, documented procedure. Expect
 to debug the Packer/UTM/Ansible layer the first time through, and expect the
@@ -347,6 +358,12 @@ STEP 7 - TEAR DOWN when finished (stops the spend)
   tooling (NetExec, Impacket, BloodHound/SharpHound, PowerView, Atomic Red
   Team, Caldera) - no novel exploits. Results are normalized and stored for
   the detection half of the loop.
+
+  make attack-atomic TECHNIQUE=<id> runs one Atomic Red Team-schema test
+  (attack/integrations/) - same dry-run-only, same scope guard. Known IDs:
+  T1087.002, T1069.002, T1018 (a small hand-written local catalog, not a
+  vendored copy of the full upstream ART project - see
+  attack/integrations/README.md).
 
 -------------------------------------------------------------------------------
  2.4  VALIDATING DETECTIONS

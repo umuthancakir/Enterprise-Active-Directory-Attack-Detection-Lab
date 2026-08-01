@@ -12,17 +12,19 @@ layer, and that variance is the whole point of this document — read the
 phase tables, not just this summary:
 
 - **Genuinely tested** (real tools, real assertions, run and passing):
-  the scope guard, the attack engine's dry-run mode, the detection
-  library, the FastAPI backend, the Ansible roles (syntax/lint only, not
-  against a live host), the IR response automation. 81 `pytest` tests
-  passing (62 at the repo root, 19 in `platform/backend/`), `ruff`/`mypy
+  the scope guard, the attack engine's dry-run mode (including the
+  Atomic Red Team schema integration), the detection library (8/8
+  coverage), the FastAPI backend, the Ansible roles (syntax/lint only, not
+  against a live host), the IR response automation. 91 `pytest` tests
+  passing (72 at the repo root, 19 in `platform/backend/`), `ruff`/`mypy
   --strict` clean throughout.
 - **Written and internally consistent, but unvalidated against real
   infrastructure**: the Packer/UTM local-lab tooling, the telemetry
   config, the Next.js frontend, the Docker Compose files. All blocked on
   the same root cause — see "Known blockers."
-- **Not started**: Atomic Red Team/Caldera integration, Wazuh/Splunk SIEM
-  backends, detections for misconfigs 6/7, a docs site.
+- **Not started**: Caldera integration, Wazuh/Splunk SIEM backends
+  (the latter deliberately deferred until Elastic is validated end-to-end
+  against a live lab), a docs site.
 
 ## Phase 0 — Scaffold
 
@@ -120,7 +122,8 @@ path for "real" runs.
 | `make attack SCENARIO=<name>` | ✅ | dry-run by default; `MODE=live` for real execution (untested, needs a real lab) |
 | CI safety smoke-test: runner refuses against the real, unprovisioned scope file | ✅ | `python-quality` CI job |
 | Established-tooling orchestration (NetExec, Impacket, BloodHound, bloodyAD) | ✅ | command-building only — dry-run never shells out; live mode does via `subprocess`, unexercised |
-| Atomic Red Team / Caldera integration | ⬜ | not attempted — current 6 techniques are hand-modeled against this lab's specific misconfigs rather than pulled from an Atomic Red Team catalog |
+| Atomic Red Team integration (`attack/integrations/`) | 🚧 | real parser for ART's public YAML schema + a small hand-written local catalog (3 recon techniques: T1087.002, T1069.002, T1018), dry-run only, same scope guard — 10 passing tests. **Not** a vendored copy of the upstream project (thousands of files, independent license) — see `attack/integrations/README.md` for what would be needed to go further |
+| Caldera integration | ⬜ | not attempted |
 
 ## Phase 4 — Detection library
 

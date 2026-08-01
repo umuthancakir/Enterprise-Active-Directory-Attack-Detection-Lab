@@ -1,0 +1,28 @@
+# attack/integrations/atomics/T1087.002.yaml
+#
+# Modeled on the public Atomic Red Team project's YAML schema
+# (https://github.com/redcanaryco/atomic-red-team) — hand-written for this
+# repo's local catalog, not copied from the live upstream file. See
+# attack/integrations/README.md.
+
+attack_technique: T1087.002
+display_name: 'Account Discovery: Domain Account'
+atomic_tests:
+  - name: Domain Admins group membership via net.exe
+    auto_generated_guid: 5ec1d32b-10e2-4596-b3f5-424253a5775e
+    description: |
+      Enumerates Domain Admins group membership using the built-in net.exe
+      utility — a standard, low-noise recon step commonly run before more
+      invasive collection (e.g. attack/techniques.py's bloodhound_collect).
+    supported_platforms:
+      - windows
+    input_arguments:
+      domain_group:
+        description: Group to enumerate
+        type: string
+        default: "Domain Admins"
+    executor:
+      name: command_prompt
+      elevation_required: false
+      command: |
+        net group "#{domain_group}" /domain
