@@ -79,6 +79,8 @@ source "qemu" "kali_attacker" {
 
   headless = true
 
+  http_directory = "${path.root}/http-linux"
+
   # QEMU's aarch64 "virt" machine has NO default GPU or input controller
   # (unlike "pc", which wires up a VGA-compatible display and a PS/2
   # keyboard automatically) — without these, VNC has no guest framebuffer
@@ -88,11 +90,21 @@ source "qemu" "kali_attacker" {
   # gives VNC something to render; the USB keyboard/tablet (behind an XHCI
   # controller, since "virt" has no built-in USB host controller either)
   # gives it something to type into.
+  # -serial file: Debian-installer's own console-detection logic (visible
+  # in its tty4 log: "Found no preferred console. Picking ttyAMA0") runs
+  # the actual preseeded install on the serial console, not the VNC-visible
+  # framebuffer, regardless of the boot_command's `console=tty0` — this is
+  # standard, correct d-i behavior on QEMU's aarch64 virt platform (not a
+  # bug to fight), but it means VNC alone shows nothing useful once the
+  # kernel boots. Logging ttyAMA0 to a file makes real install progress
+  # (and any real failure) visible — see BUILD_LOG.md session 4 for the
+  # VNC-screenshot dead end that led here.
   qemuargs = [
     ["-device", "virtio-gpu-pci"],
     ["-device", "qemu-xhci"],
     ["-device", "usb-kbd"],
     ["-device", "usb-tablet"],
+    ["-serial", "file:infra/local/build/attacker01-serial.log"],
   ]
 
   # Kali's arm64 netinst boots via GRUB (not an ISOLINUX-style "boot:"
@@ -106,11 +118,39 @@ source "qemu" "kali_attacker" {
   # Ctrl-x — both are shown on GRUB's own edit-mode help text). Verified
   # interactively via VNC screenshots against this exact ISO before being
   # encoded here — see BUILD_LOG.md session 4.
+  #
+  # debian-installer/locale, keyboard-configuration/xkb-keymap, and the
+  # netcfg/get_* values are passed here on the kernel command line, NOT
+  # left to preseed.cfg alone — confirmed by watching a real build's
+  # serial console (infra/local/build/attacker01-serial.log, rendered
+  # with the `pyte` terminal emulator to read its curses UI) sit forever
+  # at an interactive "[!!] Select a language" dialog despite preseed.cfg
+  # already setting `d-i debian-installer/locale string en_US.UTF-8`.
+  # Root cause: this question (and netcfg's hostname/domain/interface
+  # questions) are asked before netcfg brings up networking, which is
+  # itself before d-i can fetch preseed.cfg over HTTP at all — a network
+  # preseed fundamentally cannot answer any question that happens before
+  # the network exists.
+  #
+  # STATUS: this is the second attempt at this specific fix and, per a
+  # real rebuild, it STILL doesn't work — the exact same "[!!] Select a
+  # language" dialog appears even with these kernel params set, despite
+  # this being Debian's own documented minimal recipe for skipping it.
+  # A first attempt (see git history) additionally tried separate
+  # `debian-installer/language=en debian-installer/country=US` params —
+  # also no change. attacker01 is BLOCKED on this — see ROADMAP.md Known
+  # Blockers and BUILD_LOG.md session 4 for the full account and untried
+  # next steps (e.g. Kali's simple-cdd layer may be interposing its own
+  # earlier, unpreseedable locale prompt ahead of stock Debian-installer's
+  # — the `simple-cdd/profiles=kali` and on-disc
+  # `preseed/file=/cdrom/simple-cdd/default.preseed` params baked into
+  # this ISO's GRUB entry, visible in the boot_command's edit view, are
+  # the next thing to investigate, not yet tried this session).
   boot_command = [
     "<wait10>",
     "e",
     "<down><down><end>",
-    " auto=true priority=critical url=http://{{ .HTTPIP }}:{{ .HTTPPort }}/preseed.cfg hostname=attacker01 domain=eadadl.lab",
+    " auto=true priority=critical debian-installer/locale=en_US.UTF-8 keyboard-configuration/xkb-keymap=us netcfg/choose_interface=auto netcfg/get_hostname=attacker01 netcfg/get_domain=eadadl.lab url=http://{{ .HTTPIP }}:{{ .HTTPPort }}/preseed.cfg",
     "<f10>"
   ]
   boot_wait = "10s"
