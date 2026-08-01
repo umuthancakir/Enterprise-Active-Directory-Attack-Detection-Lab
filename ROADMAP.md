@@ -16,8 +16,9 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started · 🧪 STUB (present bu
 | `.env.example` | 🚧 | |
 | Makefile skeleton | 🚧 | |
 | ADR framework + ADR 0001 (deploy target), ADR 0002 (scope guard) | 🚧 | |
-| CI skeleton (`.github/workflows`) | ⬜ | |
-| Homebrew / Packer / QEMU / Ansible installed locally | ⬜ | **blocked**: this account lacks sudo; needs an admin to run the installer |
+| CI skeleton (`.github/workflows`) | ✅ | |
+| Homebrew / Packer / QEMU installed locally | ⬜ | **still blocked**: this account lacks sudo, and these need Homebrew specifically |
+| Python tooling (pytest, ruff, mypy) + Ansible (ansible-core, ansible-lint) installed locally | ✅ | **unblocked** — all pip-installable at user level (`pip install --user ...`), no sudo needed. This is a real capability unlock: it does NOT solve the Packer/QEMU/UTM blocker (those are Homebrew-only), but it means the Python layer and all of `config/`'s Ansible YAML can be genuinely tested, not just hand-reviewed. See BUILD_LOG.md. |
 
 ## Phase 1 — Isolated AD environment (IaC)
 
@@ -33,15 +34,31 @@ ADR 0004.
 | Autounattend.xml + bootstrap.ps1 (unattended install, WinRM enable) | ✅ | written, not validated against a real install |
 | Packer: Kali ARM64 template (attacker01, native, preseed-driven) | ✅ | written; Kali ARM64 installer preseed is the least-proven part — see BUILD_LOG.md |
 | Packer: Ubuntu ARM64 template (siem01, native, cloud-init) | ✅ | written, cloud-init is a well-trodden pattern |
-| `generate_bundles.py` (.utm bundle assembly from a manual blank template) | ✅ | plist key names are best-effort, unverified against a real UTM install — see infra/local/README.md |
+| `generate_bundles.py` (.utm bundle assembly from a manual blank template) | ✅ | `ruff`/`mypy` clean; plist key names are still best-effort, unverified against a real UTM install — see infra/local/README.md |
 | One-time blank UTM template creation (arm64 + x86_64) | ⬜ | manual GUI step, not yet performed |
-| `scripts/sync_scope.py` (local state + manual IP entry → lab-scope.yaml) | ✅ | written, not yet run (nothing built) |
-| AD DS role config + domain promotion (`config/dc/` Ansible) | ✅ | written, not run-tested — no WinRM target yet |
-| Member domain join (`config/member/` Ansible) | ✅ | written, not run-tested |
-| Synthetic OU/users/groups | ✅ | `config/dc/tasks/ou_structure.yml`, `users_and_groups.yml` — not run-tested |
-| Deliberate misconfigs implemented (6 of 8 for this footprint: items 1,2,3,4,6,7; items 5/8 deferred, need `wks01`; see `docs/vulnerabilities.md`) | ✅ | all 6 written across `config/dc/tasks/misconfigs.yml` + `post_join_misconfigs.yml` — not run-tested |
-| `config/site.yml` (dc → member → post-join-misconfigs ordering) + dynamic inventory from `lab-scope.yaml` | ✅ | written, not run-tested |
-| `make up` (build images + generate bundles) / manual VM boot / `make sync-scope` / `ansible-playbook config/site.yml` | ⬜ | requires local Packer/QEMU/Ansible — not run yet |
+| `scripts/sync_scope.py` (local state + manual IP entry → lab-scope.yaml) | ✅ | `ruff`/`mypy` clean; merge logic covered by 6 passing unit tests (`tests/test_sync_scope.py`) against fixtures — not run against real `infra/local` output (nothing built yet) |
+| AD DS role config + domain promotion (`config/dc/` Ansible) | ✅ | `ansible-playbook --syntax-check` passes; `ansible-lint config/` clean at **production** profile — still not run against a real WinRM target |
+| Member domain join (`config/member/` Ansible) | ✅ | same validation as above |
+| Synthetic OU/users/groups | ✅ | `config/dc/tasks/ou_structure.yml`, `users_and_groups.yml` — syntax/lint-clean, not run-tested |
+| Deliberate misconfigs implemented (6 of 8 for this footprint: items 1,2,3,4,6,7; items 5/8 deferred, need `wks01`; see `docs/vulnerabilities.md`) | ✅ | all 6 written across `config/dc/tasks/misconfigs.yml` + `post_join_misconfigs.yml` — syntax/lint-clean, not run-tested |
+| `config/site.yml` (dc → member → post-join-misconfigs ordering) + dynamic inventory from `lab-scope.yaml` | ✅ | `ansible-playbook --syntax-check` passes; inventory's `build_inventory()` covered by 6 passing unit tests (`tests/test_lab_scope_inventory.py`) |
+| `make up` (build images + generate bundles) / manual VM boot / `make sync-scope` / `ansible-playbook config/site.yml` | ⬜ | requires local Packer/QEMU (still Homebrew-blocked) — not run yet |
+
+### Safety-critical: scope guard (`attack/lib/scope_guard.py`)
+
+The single chokepoint every attack entry point (present and future) must
+resolve targets through — see [ADR 0002](docs/adr/0002-scope-guard.md).
+Pulled forward and hardened ahead of the rest of Phase 3 because it's the
+highest-value, safety-critical piece: everything else in `attack/` is only
+as safe as this module.
+
+| Item | Status | Notes |
+|---|---|---|
+| `ScopeGuard.resolve_target()` — fail-closed resolution (in-scope + provisioned + non-attackable-role + has-IP checks) | ✅ | **actually tested**: 20 passing `pytest` tests (`tests/test_scope_guard.py`), `ruff`/`mypy --strict` clean |
+| Negative test coverage: out-of-scope host, unprovisioned host, `attacker`/`siem` roles, missing IP, malformed scope file (bad YAML, missing keys, wrong types, duplicate IDs) | ✅ | 15 of the 20 tests are negative cases — this module's entire job is refusing things |
+| No override/bypass parameter | ✅ | asserted directly via `inspect.signature()` in the test suite, not just "we didn't write one" |
+| Wired into CI (`python-quality` job) | ✅ | |
+| Wired into `attack/runner.py` | ⬜ | not written yet — see Phase 3 below |
 
 ## Phase 2 — Telemetry & detection pipeline
 
@@ -99,18 +116,23 @@ ADR 0004.
 
 ## Known blockers
 
-- **No local admin/sudo on this Mac.** Homebrew (and therefore Packer,
-  QEMU, Ansible) cannot be installed by this account. Someone with admin
-  rights needs to either run the installer or grant this account
-  admin/sudo before `make up` can be executed locally. This blocker is
-  identical regardless of deploy target — switching from Azure to local
-  (ADR 0004) removed the cloud-credential dependency but not this one.
-- **Packer/UTM code is unvalidated.** None of `infra/local/packer/*.pkr.hcl`,
-  `Autounattend.xml`, the Kali preseed, or `generate_bundles.py`'s plist
-  key assumptions have been run against real Packer/QEMU/UTM — there's no
-  local install to test against (see blocker above). Treat all of it as a
-  careful first draft, not proven-correct. CI's `packer-validate` job
-  checks syntax only, not that a build actually succeeds.
+- **No local admin/sudo on this Mac — but this is narrower than it first
+  looked.** Homebrew itself cannot be installed by this account, which
+  blocks **Packer, QEMU, and UTM's underlying tooling specifically** (they
+  have no pip/pure-Python install path). It does NOT block Python tooling
+  or Ansible: `pytest`, `ruff`, `mypy`, `ansible-core`, and `ansible-lint`
+  all installed successfully via `pip install --user` (no sudo needed) —
+  see BUILD_LOG.md. So: `make up` (which needs Packer/QEMU) still can't run
+  locally; `make lint`/`make test` (Python + Ansible-lint) now can and do.
+  Someone with admin rights still needs to run the Homebrew installer, or
+  grant this account admin/sudo, before a real VM can be built.
+- **Packer/UTM code is unvalidated against real Packer/QEMU/UTM.** None of
+  `infra/local/packer/*.pkr.hcl`, `Autounattend.xml`, the Kali preseed, or
+  `generate_bundles.py`'s plist key assumptions have been build-tested —
+  see the blocker above. `packer fmt`/`packer validate` specifically (as
+  opposed to Python/Ansible) still can't run locally; CI's
+  `packer-validate` job is the only current validation, and it checks
+  syntax only, not that a build actually succeeds.
 - **UTM VM boot is a manual step.** `make up` builds images and generates
   `.utm` bundles but cannot start them — UTM has no verified CLI path for
   that (see `infra/local/README.md`). The operator opens UTM and starts
@@ -118,10 +140,12 @@ ADR 0004.
   also requires manually reading each guest's IP into
   `infra/local/discovered-ips.yaml` — see that file's `.example` for why
   this isn't automated either).
-- **Ansible roles are unvalidated against a real target.** `config/dc`,
-  `config/member`, and `config/site.yml` were written without
-  `ansible-lint` or a real WinRM-reachable Windows host to run against (no
-  local `ansible` install either — see the sudo blocker above). The
-  misconfig-4 ACL-grant PowerShell and the Kerberoasting/AS-REP-roasting
-  setup are the parts most worth re-checking by hand before trusting them,
-  since they're the core of what makes the lab useful.
+- **Ansible roles are syntax/lint-clean but unvalidated against a real
+  target.** `ansible-playbook --syntax-check` passes and `ansible-lint
+  config/` is clean at the production profile (both now actually run, not
+  assumed — see above), but there is still no real WinRM-reachable Windows
+  host to execute against. The misconfig-4 ACL-grant PowerShell and the
+  Kerberoasting/AS-REP-roasting setup are the parts most worth re-checking
+  by hand once a target exists, since they're the core of what makes the
+  lab useful and PowerShell-inside-`win_shell` is invisible to
+  `ansible-lint`.

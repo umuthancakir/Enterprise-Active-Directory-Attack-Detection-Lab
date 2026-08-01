@@ -58,6 +58,23 @@ jobs:
             echo "No Ansible content yet — skipping (see ROADMAP.md)."
           fi
 
+  python-quality:
+    name: Python lint, typecheck, test (attack/, detections/, scripts/, config/inventory/)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install package + dev dependencies
+        run: pip install -e ".[dev]"
+      - name: ruff
+        run: ruff check .
+      - name: mypy
+        run: mypy
+      - name: pytest
+        run: pytest
+
   sigma-validate:
     name: Sigma rule validation
     runs-on: ubuntu-latest

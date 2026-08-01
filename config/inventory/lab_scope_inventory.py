@@ -20,6 +20,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -29,9 +30,14 @@ SCOPE_FILE = REPO_ROOT / "inventory" / "lab-scope.yaml"
 WINDOWS_ROLES = {"domain_controller", "member_server", "workstation"}
 
 
-def build_inventory() -> dict:
-    scope = yaml.safe_load(SCOPE_FILE.read_text())
+def build_inventory(scope: dict[str, Any]) -> dict[str, Any]:
+    """Pure transform: scope dict -> Ansible dynamic inventory dict.
 
+    Deliberately takes the already-parsed scope document rather than
+    reading SCOPE_FILE itself, so tests/test_lab_scope_inventory.py can
+    exercise it against fixtures without touching the real
+    inventory/lab-scope.yaml. main() does the actual file read.
+    """
     groups: dict[str, list[str]] = {
         "windows": [],
         "linux": [],
@@ -40,7 +46,7 @@ def build_inventory() -> dict:
         "attacker": [],
         "siem": [],
     }
-    hostvars: dict[str, dict] = {}
+    hostvars: dict[str, dict[str, Any]] = {}
 
     for host in scope["hosts"]:
         if not host.get("provisioned") or not host.get("ip"):
@@ -50,7 +56,7 @@ def build_inventory() -> dict:
         role = host["role"]
         groups.setdefault(role, []).append(host_id)
 
-        vars_: dict = {
+        vars_: dict[str, Any] = {
             "ansible_host": host["ip"],
             "lab_role": role,
             "lab_hostname": host["hostname"],
@@ -82,7 +88,7 @@ def build_inventory() -> dict:
 
         hostvars[host_id] = vars_
 
-    inventory = {
+    inventory: dict[str, Any] = {
         group: {"hosts": members} for group, members in groups.items() if members
     }
     inventory["_meta"] = {"hostvars": hostvars}
@@ -102,7 +108,8 @@ def main() -> None:
         sys.exit(1)
 
     if args.list:
-        print(json.dumps(build_inventory()))
+        scope = yaml.safe_load(SCOPE_FILE.read_text())
+        print(json.dumps(build_inventory(scope)))
     else:
         print(json.dumps({}))
 

@@ -1,0 +1,39 @@
+[project]
+name = "eadadl"
+version = "0.1.0"
+description = "Enterprise Active Directory Attack & Detection Lab — shared Python tooling (attack engine, detections, scripts)"
+requires-python = ">=3.12"
+dependencies = [
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+    "mypy>=1.10",
+    "types-PyYAML",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["infra/local/build", "platform/frontend"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+# Only directories that actually contain .py files — mypy errors on an
+# empty directory rather than skipping it. Add detections/ back here once
+# Phase 4's detections/test_runner.py exists (see ROADMAP.md), same for
+# platform/backend/ once Phase 5 lands (it will likely get its own
+# pyproject.toml instead, per CI's separate `backend` job).
+files = ["attack", "scripts", "config/inventory"]
+strict = true
+warn_unused_ignores = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v"

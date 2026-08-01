@@ -13,7 +13,9 @@ isn't automated).
 Run after generating bundles and recording IPs:
     python3 scripts/sync_scope.py
 
-Requires: PyYAML.
+Requires: PyYAML. The merge logic itself (merge_scope) is pure — no file
+I/O — specifically so tests/test_sync_scope.py can exercise it against
+fixtures without touching the real repo state.
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -29,6 +32,51 @@ LOCAL_DIR = REPO_ROOT / "infra" / "local"
 STATE_FILE = LOCAL_DIR / "state.json"
 DISCOVERED_IPS_FILE = LOCAL_DIR / "discovered-ips.yaml"
 SCOPE_FILE = REPO_ROOT / "inventory" / "lab-scope.yaml"
+
+
+def merge_scope(
+    scope: dict[str, Any],
+    state: dict[str, Any],
+    discovered_ips: dict[str, str | None],
+) -> tuple[dict[str, Any], list[str]]:
+    """Merge infra/local build state + discovered IPs into a lab-scope.yaml document.
+
+    Returns (updated_scope, warnings) rather than printing directly, so
+    callers (main() for real use, tests for verification) control how
+    warnings surface. Mutates and returns `scope` in place for convenience,
+    same as the original inline implementation — callers that care about
+    the input being untouched should pass a copy.
+    """
+    warnings: list[str] = []
+
+    scope["lab"]["deploy_target"] = "local"
+    scope["lab"]["provisioned"] = True
+
+    hosts_by_id = {h["id"]: h for h in scope["hosts"]}
+
+    for host_id, host_state in state["hosts"].items():
+        if host_id not in hosts_by_id:
+            warnings.append(
+                f"infra/local state has host '{host_id}' not present in the scope "
+                "file — add it manually before it can be used as a target "
+                "(scope guard fails closed on unknown hosts)."
+            )
+            continue
+
+        ip = discovered_ips.get(host_id)
+        entry = hosts_by_id[host_id]
+        entry["ip"] = ip
+        # A generated bundle alone doesn't mean the host is reachable —
+        # require a recorded IP too, so the scope guard can't be tricked by
+        # a bundle that exists but never actually booted.
+        entry["provisioned"] = bool(host_state.get("provisioned") and ip)
+        if ip is None:
+            warnings.append(
+                f"{host_id} has no IP recorded yet — marked not-provisioned "
+                "until it does."
+            )
+
+    return scope, warnings
 
 
 def main() -> None:
@@ -52,37 +100,11 @@ def main() -> None:
     discovered_ips = yaml.safe_load(DISCOVERED_IPS_FILE.read_text()) or {}
     scope = yaml.safe_load(SCOPE_FILE.read_text())
 
-    scope["lab"]["deploy_target"] = "local"
-    scope["lab"]["provisioned"] = True
+    updated_scope, warnings = merge_scope(scope, state, discovered_ips)
+    for warning in warnings:
+        print(f"WARNING: {warning}", file=sys.stderr)
 
-    hosts_by_id = {h["id"]: h for h in scope["hosts"]}
-
-    for host_id, host_state in state["hosts"].items():
-        if host_id not in hosts_by_id:
-            print(
-                f"WARNING: infra/local state has host '{host_id}' not present "
-                f"in {SCOPE_FILE} — add it manually before it can be used as "
-                "a target (scope guard fails closed on unknown hosts).",
-                file=sys.stderr,
-            )
-            continue
-
-        ip = discovered_ips.get(host_id)
-        entry = hosts_by_id[host_id]
-        entry["ip"] = ip
-        # A generated bundle alone doesn't mean the host is reachable —
-        # require a recorded IP too, so the scope guard can't be tricked by
-        # a bundle that exists but never actually booted.
-        entry["provisioned"] = bool(host_state.get("provisioned") and ip)
-        if ip is None:
-            print(
-                f"NOTE: {host_id} has no IP recorded in "
-                f"{DISCOVERED_IPS_FILE} yet — marked not-provisioned in "
-                f"{SCOPE_FILE} until it does.",
-                file=sys.stderr,
-            )
-
-    SCOPE_FILE.write_text(yaml.dump(scope, sort_keys=False, default_flow_style=False))
+    SCOPE_FILE.write_text(yaml.dump(updated_scope, sort_keys=False, default_flow_style=False))
     print(f"Synced {SCOPE_FILE} from {STATE_FILE} + {DISCOVERED_IPS_FILE}.")
 
 

@@ -227,3 +227,74 @@ Windows/WinRM target — there isn't one yet.
 - `config/attacker/` and `config/siem/` roles (installing offensive
   tooling and the Elastic/Wazuh stack, respectively) are still
   unwritten — Phase 2/3 work, not attempted this session.
+
+## 2026-08-01 — Session 1 continued: real local test/lint tooling + scope guard
+
+**User handed off a new continuation prompt** prioritizing work that's
+implementable and CI-testable without a live lab (since Packer/QEMU/UTM
+can't be provisioned here), starting with making the scope guard a real,
+tested library.
+
+**Capability discovery (changes the story for the rest of this build):**
+this account can't run the Homebrew installer (no sudo), but `pip install
+--user` needs no sudo at all and works fine. Installed `pytest`, `ruff`,
+`mypy`, `types-PyYAML`, `ansible-core`, `ansible-lint`, and `certifi` (the
+python.org framework build's default cert store couldn't verify
+galaxy.ansible.com; fixed by pointing `SSL_CERT_FILE` at certifi's bundle)
+this way. Also installed the `ansible.windows`, `microsoft.ad`,
+`community.windows`, `ansible.posix` collections via `ansible-galaxy`. This
+means the Python layer and all Ansible YAML can now be **actually run**
+through real tooling, not just hand-reviewed — a meaningfully stronger
+validation story than "written, not run-tested" for those two layers
+specifically. It does not touch the Packer/QEMU/UTM blocker (those have no
+pip install path).
+
+**Immediately paid off:** ran `ansible-playbook --syntax-check` (passed
+clean) and `ansible-lint config/` against last session's roles and found 6
+real violations (all `name[template]`: Jinja templating in the middle of a
+task name instead of at the end, plus one line-length overage) — fixed all
+6 in `config/dc/tasks/misconfigs.yml`, re-ran, now clean at ansible-lint's
+**production** profile (its strictest).
+
+**Work done:**
+
+- `pyproject.toml`: ruff/mypy/pytest config for the repo's shared Python
+  (`attack/`, `scripts/`, `config/inventory/`); `mypy` strict mode.
+- `attack/lib/scope_guard.py`: the shared chokepoint ADR 0002 describes —
+  `ScopeGuard.resolve_target()` fail-closed on out-of-scope, non-attackable
+  role, unprovisioned, or no-IP hosts; `ScopeFileError` for a malformed
+  scope file (missing keys, wrong types, duplicate IDs, bad YAML). No
+  override parameter anywhere.
+- `tests/test_scope_guard.py`: 20 tests, hermetic (each writes its own
+  `lab-scope.yaml` fixture into `tmp_path`), 15 of them negative cases.
+  Includes a test that asserts via `inspect.signature()` that
+  `resolve_target()` truly has no bypass parameter, not just "we didn't
+  add one this time."
+- Refactored `scripts/sync_scope.py` and
+  `config/inventory/lab_scope_inventory.py` to split out pure functions
+  (`merge_scope()`, `build_inventory()`) from their file I/O, specifically
+  so they're unit-testable — added `tests/test_sync_scope.py` (6 tests) and
+  `tests/test_lab_scope_inventory.py` (6 tests).
+- `Makefile`'s `lint`/`test` targets replaced: real `ruff` + `mypy` +
+  `ansible-lint` + (if installed) `packer fmt -check`, and real `pytest`.
+  Degrades gracefully locally when a tool is missing; CI does not.
+- `.github/workflows/ci.yml`: added a `python-quality` job (ruff + mypy +
+  pytest) — previously there was no CI job for the Python layer at all.
+- Fixed 4 real `mypy --strict` findings in
+  `config/inventory/lab_scope_inventory.py` (bare `dict` instead of
+  `dict[str, Any]`, one genuine type mismatch from an unannotated dict
+  literal) surfaced while wiring this up.
+
+**Verification performed (all actually run, not simulated):** `pytest` —
+32/32 passing. `ruff check .` — clean. `mypy` (strict) — clean, 5 source
+files. `ansible-lint config/` — clean at production profile.
+`ansible-playbook --syntax-check config/site.yml` — passes.
+
+**Not done / explicitly deferred:**
+
+- Still no real WinRM/SSH target — none of the Ansible roles or the attack
+  engine (not yet written) have executed against a live host.
+- Packer/QEMU/UTM remain untested — this session's tooling unlock doesn't
+  reach them (no pip install path for Homebrew-only tools).
+- `attack/runner.py` (the engine that will actually use `scope_guard.py`)
+  is next.

@@ -78,14 +78,25 @@ platform: check-env ## Serve the platform (backend + frontend) locally via docke
 	docker compose -f platform/docker-compose.yml up --build  ## STATUS: STUB — see ROADMAP.md Phase 5
 
 # ---- quality -----------------------------------------------------------
+#
+# Every tool below is pip-installable at user level (`pip install --user
+# ...`, no sudo) except packer itself, which needs Homebrew — see
+# ROADMAP.md "Known blockers". `lint`/`test` degrade gracefully (skip with
+# a clear message) rather than failing outright when a given tool truly
+# isn't installed, but CI (.github/workflows/ci.yml) always has every tool
+# and does not get that grace — CI failing is the real signal.
 
 .PHONY: lint
-lint: ## Run all linters (packer validate, ansible-lint, ruff, eslint)
-	@echo "packer validate (windows-server)"; packer validate $(LOCAL_DIR)/packer/windows-server.pkr.hcl || true
-	@echo "packer validate (kali-attacker)"; packer validate $(LOCAL_DIR)/packer/kali-attacker.pkr.hcl || true
-	@echo "packer validate (ubuntu-siem)"; packer validate $(LOCAL_DIR)/packer/ubuntu-siem.pkr.hcl || true
-	@echo "STATUS: ansible-lint / ruff / eslint not wired up yet — see ROADMAP.md"
+lint: ## Run all linters: ruff, mypy, ansible-lint, packer fmt/validate (where installed)
+	@echo "--- ruff ---"; ruff check .
+	@echo "--- mypy ---"; mypy
+	@echo "--- ansible-lint (config/) ---"; ansible-lint config/
+	@if command -v packer >/dev/null 2>&1; then \
+		echo "--- packer fmt -check ---"; packer fmt -check -recursive $(LOCAL_DIR)/packer; \
+	else \
+		echo "--- packer fmt -check: SKIPPED (packer not installed — see README.md Prerequisites) ---"; \
+	fi
 
 .PHONY: test
-test: ## Run all test suites
-	@echo "STATUS: no test suites exist yet — see ROADMAP.md"
+test: ## Run the pytest suite (attack/lib scope guard, sync_scope, dynamic inventory)
+	pytest
