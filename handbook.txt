@@ -64,8 +64,17 @@ truth for what actually works. As of this handbook:
         happened. platform/docker-compose.yml likewise written, not run
         (no local Docker). `make platform` itself is therefore also
         unrun - see platform/README.md.
-  * Phases 6-7 (IR) ....................................................... NOT
-        STARTED.
+  * Phase 6 (DFIR/IR: playbooks, hunting notebook, response automation) . DONE.
+        ir/playbooks/ has 5 NIST SP 800-61 playbooks (Kerberoasting,
+        AS-REP roasting, ACL abuse, unconstrained delegation, DCSync),
+        each citing its Sigma rule and telemetry prerequisite.
+        ir/notebooks/ad-purple-team-hunting.ipynb has 5 hunts, built and
+        schema-validated via nbformat. ir/automation/responder.py maps a
+        detection hit to its containment action, reusing the same scope
+        guard as attack/runner.py - dry-run only, permanently (no
+        live-execution mode exists or is planned - see its README).
+        7 passing tests. Nothing here has run against a real
+        incident/cluster - no lab exists yet.
 
 So the install steps below describe the intended, documented procedure. Expect
 to debug the Packer/UTM/Ansible layer the first time through, and expect the

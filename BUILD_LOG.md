@@ -598,3 +598,58 @@ built (no local Docker).
   `attack/runner.py`'s CLI — no lab exists to exercise it either way.
 - No rate limiting, no fine-grained per-scenario permissions, no
   `package-lock.json` (blocks `npm ci` in CI until one exists).
+
+## 2026-08-01 — Session 1 continued: DFIR/IR (Phase 6)
+
+**Work done:**
+
+- `ir/playbooks/`: 5 NIST SP 800-61-structured playbooks (Preparation;
+  Detection & Analysis; Containment, Eradication & Recovery; Post-Incident
+  Activity) — Kerberoasting, AS-REP roasting, ACL abuse, unconstrained
+  delegation coercion, DCSync. Each cites its specific Sigma rule,
+  telemetry prerequisite (audit policy/SACL), and `docs/vulnerabilities.md`
+  item rather than being generic IR boilerplate — e.g. the DCSync
+  playbook explains *why* krbtgt needs resetting twice with a convergence
+  wait, not just "reset krbtgt." The three chain-related playbooks
+  (acl-abuse → unconstrained-delegation → dcsync) are written to be read
+  together as one incident narrative, matching `attack/chains.py`'s
+  `domain_dominance` chain.
+- `ir/notebooks/ad-purple-team-hunting.ipynb`: built via `nbformat`'s
+  Python API (not hand-typed JSON) and validated with
+  `nbformat.validate()` — 5 hunts, one per detected technique, each
+  deliberately broader than its corresponding Sigma rule (e.g. any
+  non-AES ticket encryption, not just RC4; a wider coercion-relevant pipe
+  list). `ruff check .` lints inside the notebook's code cells natively —
+  caught and fixed a real bug this way: a DCSync hunt query had
+  `f"*{{guid}}*"` (escaped/literal double braces) instead of `f"*{guid}*"`,
+  which would have made the wildcard search for the literal string
+  `{guid}` instead of interpolating the actual GUID — the query would
+  never have matched anything.
+- `ir/automation/responder.py`: SOAR-style response mapping, deliberately
+  dry-run-only (no live-execution mode at all, unlike `attack/runner.py`'s
+  unexercised-but-present `--live`) — reuses `attack.lib.scope_guard` so a
+  remediation action gets the identical fail-closed target resolution as
+  an offensive technique. DCSync's response is marked
+  `automatable=False` rather than modeled as a fake one-shot command,
+  since the real remediation is multi-step and time-gated.
+- `tests/test_responder.py`: 7 tests, including that an unresolvable
+  target yields no action (fail-closed) and that non-automatable actions
+  never carry a command.
+- Added `ir` to root `pyproject.toml`'s mypy `files` list.
+
+**Verification performed:** `pytest` — 62/62 passing (7 new). `ruff
+check .` — clean, including inside the `.ipynb` (where it caught the
+f-string bug above). `mypy` (strict) — clean, 16 source files.
+`nbformat.validate()` — notebook schema-valid.
+
+**Not done / explicitly deferred:**
+
+- No playbook or hunt has been exercised against a real incident/cluster
+  — no lab exists yet.
+- No `bloodhound_collect` (recon) playbook — enumeration alone rarely
+  warrants full IR response; covered by the notebook's Hunt 5 instead,
+  noted explicitly in `ir/playbooks/README.md`.
+- `ir/automation/responder.py` intentionally has no live-execution path at
+  all — this is a permanent design boundary (see its README's "Design"
+  section), not a temporary gap like most other "not run yet" notes in
+  this log.

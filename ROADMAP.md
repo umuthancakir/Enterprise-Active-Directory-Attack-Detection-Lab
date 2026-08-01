@@ -145,9 +145,9 @@ same confidence. See `platform/README.md`.
 
 | Item | Status | Notes |
 |---|---|---|
-| NIST SP 800-61 aligned IR playbooks | ⬜ | |
-| Threat-hunting notebooks | ⬜ | |
-| SOAR-style response automation hooks | ⬜ | |
+| NIST SP 800-61 aligned IR playbooks (`ir/playbooks/`) | ✅ | 5 playbooks (Kerberoasting, AS-REP roasting, ACL abuse, unconstrained delegation, DCSync), each citing its Sigma rule/telemetry/`docs/vulnerabilities.md` item |
+| Threat-hunting notebooks (`ir/notebooks/`) | ✅ | 1 notebook, 5 hunts (one per detected technique), built + schema-validated via `nbformat` — **not run** against a real cluster |
+| SOAR-style response automation hooks (`ir/automation/`) | ✅ | `responder.py`, 7 passing tests — dry-run only by design (see `ir/automation/README.md` "Design"), reuses the same scope guard as `attack/runner.py` |
 
 ## Phase 7 — Polish
 
