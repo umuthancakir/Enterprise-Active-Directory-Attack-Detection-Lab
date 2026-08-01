@@ -1,0 +1,446 @@
+===============================================================================
+ EADADL - Enterprise Active Directory Attack & Detection Lab
+ HANDBOOK
+===============================================================================
+
+A fully isolated, reproducible purple-team lab: it provisions a deliberately
+vulnerable Active Directory environment, runs real (but established, publicly
+documented) offensive tooling against ONLY the hosts you own, ships the
+resulting telemetry to a SIEM, and validates Sigma detections against that
+telemetry.
+
+-------------------------------------------------------------------------------
+ CURRENT STATUS - READ THIS FIRST
+-------------------------------------------------------------------------------
+
+This is a build-in-progress. ROADMAP.md and BUILD_LOG.md are the source of
+truth for what actually works. As of this handbook:
+
+  * Phase 0 (repo scaffold, governance docs, ADRs, scope guard, CI) ... DONE
+  * Phase 1 (local UTM/QEMU lab: Packer templates + Ansible roles) ..... WRITTEN,
+        NOT YET BUILT OR RUN. Packer/UTM code is still unvalidated against a
+        real install (no local hypervisor to test on - Homebrew itself is
+        blocked, no sudo on this machine). The Ansible layer is a partial
+        exception: `pip install --user ansible-core ansible-lint` needs no
+        sudo, so `ansible-playbook --syntax-check` and `ansible-lint` DO run
+        and pass clean (production profile) - real static validation, just
+        not a real WinRM/SSH target yet.
+  * Phase 3 (attack scenario engine) ................................... DONE
+        in DRY-RUN mode. `make attack SCENARIO=<name>` genuinely works today:
+        it resolves targets through the scope guard, prints the exact
+        commands each technique would run, and emits Finding records from
+        fixtures - fully tested (attack/lib/scope_guard.py + attack/runner.py;
+        see the repo-wide test count in the Phase 7 summary below).
+        `MODE=live` (real tool execution) is implemented
+        but unexercised - there is no lab or installed offensive tooling to
+        run it against yet. 8 techniques, 3 chains (added gpo_edit_abuse,
+        sysvol_credential_read, and the gpo_and_sysvol_abuse chain in
+        session 2 to close a detection-coverage gap). Also gained an
+        Atomic Red Team schema integration (attack/integrations/) in
+        session 2: parses ART's real public YAML schema, small
+        hand-written local catalog (3 recon techniques), dry-run only,
+        same scope guard - `make attack-atomic TECHNIQUE=T1087.002`.
+        NOT a vendored copy of the upstream ART project.
+  * Phase 2 (telemetry: Sysmon, Windows audit policy/SACLs, WEF, ......... WRITTEN,
+    Elastic shipping, baseline queries)                                  NOT DEPLOYED.
+        All config (telemetry/sysmon/, telemetry/windows-audit-policy/,
+        telemetry/wef/, telemetry/winlogbeat/, telemetry/elastic/) is
+        syntax-validated (XML/YAML/JSON parse) but not applied to a real
+        host or cluster - none exists yet. Not wired into config/dc or
+        config/member's Ansible yet either - currently a documented manual
+        procedure. See docs/adr/0006-telemetry-architecture.md for the
+        design (and why Sysmon alone can't detect 4 of this lab's 6
+        implemented misconfigs - Windows Security auditing is required).
+  * Phase 4 (detection library: Sigma rules + fixture tests) ............ DONE
+        against synthetic fixtures. `make detections-test` genuinely works
+        today, no lab needed: 8 Sigma rules (one per attack/techniques.py
+        technique, including gpo_edit_abuse and sysvol_credential_read,
+        added in session 2 to close the misconfig 6/7 gap), each proven
+        to fire against synthetic telemetry via detections/matcher.py
+        (which reuses pySigma's real condition parser, not a hand-rolled
+        one). 8/8 techniques covered - writes detections/coverage_matrix.json
+        every run. NOT validated against real telemetry from a running
+        lab - none exists yet.
+  * Phase 5 (platform: FastAPI backend + Postgres + Next.js frontend) ... PARTIAL.
+        Backend (platform/backend/) is DONE and fully tested: 19/19 tests
+        passing, ruff/mypy --strict clean. JWT auth with viewer/operator
+        roles; POST /runs calls the real attack.runner.run_scenario()
+        gated by the real scope guard (proven against the actual
+        unprovisioned inventory/lab-scope.yaml, same as the make attack
+        CLI). Frontend (platform/frontend/) is WRITTEN, NOT VALIDATED -
+        no local Node.js install (same Homebrew-blocked story as
+        Packer/QEMU), so no npm install/tsc/eslint/browser render has
+        happened. platform/docker-compose.yml likewise written, not run
+        (no local Docker). `make platform` itself is therefore also
+        unrun - see platform/README.md.
+  * Phase 6 (DFIR/IR: playbooks, hunting notebook, response automation) . DONE.
+        ir/playbooks/ has 7 NIST SP 800-61 playbooks (Kerberoasting,
+        AS-REP roasting, ACL abuse, unconstrained delegation, DCSync,
+        GPO edit-rights abuse, SYSVOL credential exposure - the last two
+        added in session 2), each citing its Sigma rule and telemetry
+        prerequisite.
+        ir/notebooks/ad-purple-team-hunting.ipynb has 5 hunts, built and
+        schema-validated via nbformat. ir/automation/responder.py maps a
+        detection hit to its containment action, reusing the same scope
+        guard as attack/runner.py - dry-run only, permanently (no
+        live-execution mode exists or is planned - see its README).
+        7 passing tests. Nothing here has run against a real
+        incident/cluster - no lab exists yet.
+  * Phase 7 (polish: diagrams, CI, final ROADMAP pass) .................. DONE.
+        docs/architecture.md added (telemetry data-flow, domain_dominance
+        attack-chain sequence, purple-team-loop diagrams, on top of the
+        host/platform diagram already in README.md). CI's ansible-lint
+        job now installs config/requirements.yml's collections and runs
+        ansible-playbook --syntax-check, not just lint, so CI actually
+        reproduces what was verified locally. 81 pytest tests passing
+        total (62 at the repo root, 19 in platform/backend/), ruff/mypy
+        --strict clean throughout everywhere Python tooling could run.
+        [as of end of session 1 - see BUILD_LOG.md session 2 for what's
+        changed since: misconfig 6/7 detection coverage closed (8/8) and
+        the Atomic Red Team integration added, bringing the total to 91
+        passing tests (72 root + 19 backend).]
+
+So the install steps below describe the intended, documented procedure. Expect
+to debug the Packer/UTM/Ansible layer the first time through, and expect the
+detection/platform commands to be non-functional until those phases are
+built out. `make attack` (dry-run) works right now, before you build anything -
+try it against the repo as cloned and it will correctly refuse (nothing is
+provisioned yet).
+
+Default deploy target is LOCAL (UTM/QEMU on an Apple Silicon Mac). The Azure
+path was the original design but was removed from the tree (ADR 0004); it is
+recoverable from git history and covered in Section 1B.
+
+
+===============================================================================
+ SECTION 1 - HOW TO INSTALL IT
+===============================================================================
+
+-------------------------------------------------------------------------------
+ 1A. LOCAL INSTALL  (UTM / QEMU on Apple Silicon macOS - the default)
+-------------------------------------------------------------------------------
+
+WHO THIS IS FOR
+  Apple Silicon Mac (arm64), fully offline, no cloud spend. Windows Server has
+  no practical arm64 path, so the two Windows hosts (dc01, mem01) run under
+  QEMU's software (TCG) x86_64 emulation - genuine but SLOW. The attacker
+  (Kali) and SIEM (Ubuntu) run as native arm64 guests with no emulation
+  overhead.
+
+REQUIREMENTS
+  * Apple Silicon Mac with admin/sudo rights (needed to install Homebrew).
+  * ~16 GB RAM minimum for the trimmed 4-host footprint; 32 GB comfortable.
+  * ~80-120 GB free disk for ISOs + built images.
+  * UTM.app installed (GUI hypervisor - download from https://mac.getutm.app
+    or the Mac App Store; it is NOT a Homebrew package).
+
+STEP 1 - Install the IaC tooling (requires admin/sudo)
+  Install Homebrew if you don't have it (https://brew.sh), then:
+
+      brew install packer qemu ansible
+
+  Verify:
+
+      make check-tools        # prints "All required tools found." when ready
+
+STEP 2 - Create the two blank UTM templates (one-time, manual GUI step)
+  UTM has no CLI to create a VM from a spec, so the bundle generator mutates
+  an existing blank bundle. Create two by hand:
+
+    1. UTM -> File -> New.
+    2. Choose "Virtualize" for the ARM64 template; choose "Emulate" for the
+       x86_64 template (accept the "this will be slow" warning - expected).
+    3. Architecture: ARM64 for one, x86_64 for the other. 2 CPU / 4096 MB each.
+    4. Do NOT attach an ISO/disk; leave it minimal. Do NOT boot it. Save, quit.
+    5. Find the bundle under
+         ~/Library/Containers/com.utmapp.UTM/Data/Documents/*.utm
+       and copy it to:
+         infra/local/templates/arm64-blank.utm
+         infra/local/templates/x86_64-blank.utm
+       (infra/local/templates/ is gitignored - these are machine-specific.)
+
+STEP 3 - Verify the plist keys the generator assumes (recommended)
+  The bundle generator's plist key names were written without a real UTM to
+  test against. Sanity-check them before relying on it:
+
+      plutil -p infra/local/templates/arm64-blank.utm/config.plist
+
+  Diff what you see against the keys generate_bundles.py writes and adjust the
+  script if they differ.
+
+STEP 4 - Configure environment secrets
+      cp .env.example .env
+
+  Then edit .env and set at minimum:
+      ADMIN_PASSWORD           - a random strong password (VM local admin)
+      WIN_ISO_URL / WIN_ISO_CHECKSUM     - Windows Server 2022 eval ISO
+      KALI_ISO_URL / KALI_ISO_CHECKSUM   - Kali arm64 installer ISO
+      UBUNTU_IMG_CHECKSUM                - Ubuntu arm64 cloud image checksum
+      LAB_DOMAIN_NAME / LAB_DOMAIN_NETBIOS / LAB_ADMIN_* - synthetic only
+      SIEM_BACKEND (elastic|wazuh|splunk) + SIEM_ADMIN_PASSWORD
+      POSTGRES_* / BACKEND_SECRET_KEY    - platform layer (Phase 5)
+
+  Get ISO URLs/checksums from the vendor download pages. Never trust a stale
+  checksum from a third party. .env is gitignored - never commit real values.
+
+STEP 5 - Build the disk images and generate the VM bundles
+      make up
+
+  This runs Packer for each host and assembles the .utm bundles. It does NOT
+  and CANNOT start the VMs (UTM has no verified CLI to boot them). Equivalent
+  manual sequence if you prefer to run it stepwise:
+
+      infra/local/build.sh dc01
+      infra/local/build.sh mem01
+      infra/local/build-linux.sh attacker01
+      infra/local/build-linux.sh siem01
+      python3 infra/local/generate_bundles.py
+
+STEP 6 - Boot the VMs (manual) and record their IPs
+    1. Open UTM and start dc01, mem01, attacker01, siem01. Wait for boot.
+    2. Read each guest's IP from its console (`ipconfig` on Windows,
+       `ip addr` on Linux).
+    3. Record them:
+         cp infra/local/discovered-ips.yaml.example infra/local/discovered-ips.yaml
+       and fill in dc01/mem01/attacker01/siem01. (Gitignored - IPs are
+       machine/DHCP specific.)
+    4. Sync those IPs into the scope file:
+         make sync-scope        # writes inventory/lab-scope.yaml
+
+STEP 7 - Configure the domain (promote DC, join member, apply misconfigs)
+      ansible-playbook config/site.yml
+
+  Ordering (dc -> member -> post-join misconfigs) and the dynamic inventory
+  from lab-scope.yaml are handled by site.yml. This implements 6 of the 8
+  deliberate misconfigurations documented in docs/vulnerabilities.md (items
+  5 and 8 need a workstation host, deferred in this footprint).
+
+You now have a running, deliberately vulnerable AD lab. Proceed to Section 2.
+
+
+-------------------------------------------------------------------------------
+ 1B. AZURE INSTALL  (deprecated / alternative - restore from git first)
+-------------------------------------------------------------------------------
+
+WHO THIS IS FOR
+  If you want real x86_64 Windows Server at native speed and are willing to
+  incur cloud spend and manage credentials. This path was the original design
+  (ADR 0001/0003) but the infra/azure/ Terraform was REMOVED from the tree in
+  ADR 0004. It is recoverable from git history.
+
+WARNING
+  Azure VMs cost money while running. Always deallocate/tear down when done.
+  Deploy ONLY into an isolated subscription/resource group you own.
+
+STEP 1 - Restore the Azure Terraform from git history
+      git checkout 67ce0f3 -- infra/azure
+  (67ce0f3 is the commit recorded in ROADMAP.md / .env.example as holding the
+  removed Azure code. Verify with `git log --oneline -- infra/azure` if that
+  hash has drifted.)
+
+STEP 2 - Install the tooling
+      brew install azure-cli terraform ansible
+
+STEP 3 - Authenticate to Azure (interactive)
+      az login
+  A browser opens for sign-in; Terraform then uses that session. (If you hit
+  AADSTS50058 "silent sign-in / no user signed in", it means no active session
+  - run `az login` again in a normal browser context, or `az login --use-device-code`.)
+
+STEP 4 - Configure environment
+  In .env, set DEPLOY_TARGET=azure and uncomment/fill:
+      AZURE_SUBSCRIPTION_ID    - from `az account show --query id -o tsv`
+                                 (or use the subscription name)
+      AZURE_REGION             - e.g. uksouth or westeurope (nearest to you)
+      AZURE_RESOURCE_GROUP     - e.g. eadadl-lab-rg
+  Plus the same LAB_* / SIEM_* / POSTGRES_* values as the local path.
+
+STEP 5 - Provision the isolated environment
+      cd infra/azure
+      terraform init
+      terraform plan -out tfplan
+      terraform apply tfplan
+
+  This should stand up the isolated VNet, the VMs, and Bastion-only access.
+
+STEP 6 - Configure the domain
+      ansible-playbook config/site.yml
+  (Same roles as local; the dynamic inventory resolves the Azure-provisioned
+  hosts through inventory/lab-scope.yaml once sync'd.)
+
+STEP 7 - TEAR DOWN when finished (stops the spend)
+      cd infra/azure && terraform destroy
+
+
+===============================================================================
+ SECTION 2 - HOW TO USE IT
+===============================================================================
+
+-------------------------------------------------------------------------------
+ 2.1  THE SAFETY MODEL (read before running anything offensive)
+-------------------------------------------------------------------------------
+
+  * inventory/lab-scope.yaml is the SINGLE source of truth for authorized
+    attack targets. The attack engine refuses any host not listed there.
+    There is no override flag.
+  * Hosts flagged provisioned:false are treated as NOT attackable even though
+    they're listed (a host is only attackable once it actually exists).
+  * The attacker box (attacker01) and the SIEM (siem01) are never valid
+    targets - they appear under non_attackable_roles and are refused even if
+    resolved by id.
+  * The lab network is host-only / isolated with no internet route. Keep it
+    that way. See SECURITY.md and docs/adr/0002, 0005.
+  * Only ever run this against infrastructure you own or are authorized to test.
+
+-------------------------------------------------------------------------------
+ 2.2  DAILY LIFECYCLE
+-------------------------------------------------------------------------------
+
+  Standard loop once installed:
+
+      make up               # (local) build images + generate bundles
+      # -> open UTM, start the 4 VMs, wait for boot          [manual]
+      make sync-scope       # record booted VMs' IPs into lab-scope.yaml
+      ansible-playbook config/site.yml   # promote DC, join member, misconfigs
+
+      make attack SCENARIO=<name>   # run an attack chain (in-scope hosts only)
+      make detections-test          # prove the matching Sigma rules fire
+      make platform                 # serve the dashboard / ATT&CK heatmap UI
+
+      make down             # tear the lab down
+
+  NOTE: as of this handbook, both `make attack` (dry-run) and
+  `make detections-test` genuinely work today, with no lab built yet:
+  `make attack` prints the commands it WOULD run and emits Finding records
+  from fixtures (add MODE=live once a real lab exists, untested so far);
+  `make detections-test` validates every Sigma rule and proves it fires
+  against synthetic telemetry fixtures, writing
+  detections/coverage_matrix.json. `make platform` is still a STUB
+  (Phase 5 not built) and will no-op.
+
+  Discover available targets/commands any time:
+
+      make help             # lists every Make target with a description
+
+-------------------------------------------------------------------------------
+ 2.2a  DEV TOOLING (make lint / make test) - works today, no lab needed
+-------------------------------------------------------------------------------
+
+  These need no VM, no Homebrew, and no sudo - everything they use installs
+  via `pip install --user` (pytest, ruff, mypy, ansible-core, ansible-lint):
+
+      make lint              # ruff + mypy --strict + ansible-lint config/
+                              #   (+ packer fmt -check, only if packer is on PATH)
+      make test               # pytest - attack/lib scope guard, attack/runner,
+                              #   sync_scope, dynamic inventory (43 tests)
+
+  If `ansible-galaxy collection install -r config/requirements.yml` hits a
+  certificate error against galaxy.ansible.com, point SSL_CERT_FILE at
+  certifi's bundle first:
+
+      pip install --user certifi
+      export SSL_CERT_FILE="$(python3 -c 'import certifi; print(certifi.where())')"
+
+-------------------------------------------------------------------------------
+ 2.3  RUNNING ATTACKS
+-------------------------------------------------------------------------------
+
+  make attack SCENARIO=<name> runs a named atomic technique or a full chain
+  (recon -> initial access -> credential access -> lateral movement ->
+  domain dominance) FROM attacker01 against in-scope Windows hosts. Defaults
+  to --dry-run: resolves targets through the scope guard, prints the exact
+  command each technique would run, and emits Finding records from
+  attack/fixtures/ - no tool is actually invoked, and this works today
+  against the repo as cloned (try it - it will correctly refuse, since
+  nothing is provisioned). Pass MODE=live to actually invoke tooling once a
+  real lab exists; that path is implemented but untested here. Every
+  technique is tagged with its MITRE ATT&CK ID and orchestrates established
+  tooling (NetExec, Impacket, BloodHound/SharpHound, PowerView, Atomic Red
+  Team, Caldera) - no novel exploits. Results are normalized and stored for
+  the detection half of the loop.
+
+  make attack-atomic TECHNIQUE=<id> runs one Atomic Red Team-schema test
+  (attack/integrations/) - same dry-run-only, same scope guard. Known IDs:
+  T1087.002, T1069.002, T1018 (a small hand-written local catalog, not a
+  vendored copy of the full upstream ART project - see
+  attack/integrations/README.md).
+
+-------------------------------------------------------------------------------
+ 2.4  VALIDATING DETECTIONS
+-------------------------------------------------------------------------------
+
+  make detections-test validates the Sigma rules in detections/sigma/ (one
+  per attack/techniques.py technique) and runs each against synthetic
+  fixture telemetry in detections/fixtures/ - no live SIEM needed, works
+  today against the repo as cloned. Writes detections/coverage_matrix.json
+  (8/8 techniques covered as of this handbook). Once a real lab exists,
+  detections/fixtures/ should be replaced/supplemented with actual captured
+  telemetry from a real attack run - that's tracked as follow-up work, not
+  done yet (see ROADMAP.md Phase 4).
+
+-------------------------------------------------------------------------------
+ 2.5  THE PLATFORM UI (backend done+tested; frontend/compose unvalidated)
+-------------------------------------------------------------------------------
+
+  make platform brings up the FastAPI backend + PostgreSQL + Next.js
+  frontend via Docker Compose (outside the lab network) - once Docker is
+  available (it isn't on this machine, see 2.7). Exposes a scenario
+  runner (dry-run only from the UI), run history + per-run findings, and
+  an ATT&CK-style coverage heatmap fed by GET /coverage. Default URLs: UI
+  on http://localhost:3000, API on http://localhost:8000 (interactive
+  docs at /docs). Sign in with BACKEND_ADMIN_USERNAME/PASSWORD from .env -
+  that account is auto-created on first backend startup.
+
+  You can run the backend alone, without Docker, right now:
+      cd platform/backend
+      pip install -e ../..              # root eadadl package
+      pip install -e ".[dev]"
+      pytest                            # 19 tests, all passing
+      uvicorn app.main:app --reload     # http://localhost:8000/docs
+
+-------------------------------------------------------------------------------
+ 2.6  TEARDOWN
+-------------------------------------------------------------------------------
+
+  LOCAL:  make down prints the teardown steps. In practice: stop the 4 VMs in
+          UTM, delete their .utm bundles (paths are in infra/local/state.json),
+          then `rm -rf infra/local/build infra/local/state.json` to reclaim
+          the built images.
+  AZURE:  cd infra/azure && terraform destroy
+
+-------------------------------------------------------------------------------
+ 2.7  TROUBLESHOOTING QUICK HITS
+-------------------------------------------------------------------------------
+
+  * "packer/qemu/ansible not found" from make check-tools
+        -> Step 1 not done, or not on PATH. Re-run `brew install packer qemu
+           ansible` with admin rights.
+  * Homebrew won't install / "need sudo"
+        -> This is the known blocker: installing Homebrew needs admin rights.
+           Get an admin to run it or grant your account admin, then retry.
+  * generate_bundles.py errors on plist keys
+        -> Do Step 3 (plutil) and reconcile the key names with your UTM version.
+  * Windows VMs painfully slow
+        -> Expected: x86_64 under QEMU TCG is pure emulation on Apple Silicon.
+           Give them more RAM, close other apps, or use the Azure path (1B).
+  * make sync-scope finds no IPs
+        -> You must fill infra/local/discovered-ips.yaml by hand first (2.2);
+           UTM host-only leases aren't scriptable from the host.
+  * Azure `az login` -> AADSTS50058
+        -> No active browser session. Re-run `az login`, or
+           `az login --use-device-code`.
+  * make platform fails / does nothing
+        -> Needs Docker, not installed here (Homebrew-blocked, same as
+        Packer/QEMU). The backend alone runs fine without Docker/Compose -
+        see 2.5's "You can run the backend alone" snippet.
+        (make attack and make detections-test are NOT in this bucket -
+        both work today, no lab needed - see 2.2a/2.3/2.4.)
+  * make attack SCENARIO=<name> says "REFUSED: No attackable host..."
+        -> Correct behavior, not a bug: the scope guard fails closed until
+           `make sync-scope` has run against an actually-provisioned lab
+           (2.2, Step 6). Try it against a clean clone - this refusal is
+           the safety property working as designed.
+
+===============================================================================
+ END OF HANDBOOK  -  keep this file in sync with README.md and ROADMAP.md
+===============================================================================

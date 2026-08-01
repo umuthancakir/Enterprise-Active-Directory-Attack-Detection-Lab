@@ -1,0 +1,67 @@
+[project]
+name = "eadadl"
+version = "0.1.0"
+description = "Enterprise Active Directory Attack & Detection Lab — shared Python tooling (attack engine, detections, scripts)"
+requires-python = ">=3.12"
+dependencies = [
+    "pyyaml>=6.0",
+    "pysigma>=1.5.0",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+# Explicit include list — this repo has many top-level directories
+# (infra/, telemetry/, config/, docs/, ...) that are NOT Python packages,
+# and setuptools' flat-layout auto-discovery errors out ("multiple
+# top-level packages discovered") without one. platform/backend/ installs
+# this package as a path dependency (`pip install -e ../..`) specifically
+# to import attack.runner/attack.lib.scope_guard — see
+# platform/backend/README.md.
+include = ["attack*", "detections*"]
+
+[tool.setuptools.package-data]
+# PEP 561 markers — lets platform/backend's mypy run (a separate
+# pyproject.toml/package) resolve types for `import attack.X` as this
+# package's own inline hints rather than reporting "Cannot find
+# implementation or library stub."
+attack = ["py.typed"]
+detections = ["py.typed"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+    "mypy>=1.10",
+    "types-PyYAML",
+    # sigma-cli: optional, manual-use only (`sigma check`) — not used by
+    # detections/test_runner.py itself, which deliberately avoids it since
+    # its tag validator fetches MITRE ATT&CK data over the network. See
+    # that module's docstring.
+    "sigma-cli>=1.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["infra/local/build", "platform/frontend"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+# Only directories that actually contain .py files — mypy errors on an
+# empty directory rather than skipping it. platform/backend/ will likely
+# get its own pyproject.toml once Phase 5 lands (per CI's separate
+# `backend` job) rather than being added here.
+files = ["attack", "scripts", "config/inventory", "detections", "ir"]
+exclude = ["attack/results", "attack/fixtures", "detections/fixtures"]
+strict = true
+warn_unused_ignores = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v"
