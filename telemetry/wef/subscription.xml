@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  telemetry/wef/subscription.xml
+
+  Source-initiated WEF subscription, applied on the collector (dc01) via:
+      wecutil cs telemetry\wef\subscription.xml
+
+  Source computers (mem01) need a GPO (Computer Configuration > Policies >
+  Administrative Templates > Windows Components > Event Forwarding >
+  "Configure target Subscription Manager") pointing at this collector, and
+  the Windows Event Collector service running on dc01
+  (`wecutil qc /q`). See README.md in this directory for the full setup —
+  this file alone is not sufficient.
+
+  Pulls Sysmon (telemetry/sysmon/) and the Security-channel events
+  telemetry/windows-audit-policy/ enables into ForwardedEvents on dc01,
+  where a single Winlogbeat instance ships everything onward — see
+  docs/adr/0006-telemetry-architecture.md.
+
+  STATUS: written but not applied to a real collector — see ROADMAP.md.
+-->
+<Subscription xmlns="http://schemas.microsoft.com/2006/03/windows/events/subscription">
+  <SubscriptionId>eadadl-lab-forwarding</SubscriptionId>
+  <SubscriptionType>SourceInitiated</SubscriptionType>
+  <Description>EADADL lab: forward Sysmon + Security auditing events to dc01's ForwardedEvents log.</Description>
+  <Enabled>true</Enabled>
+  <Uri>http://schemas.microsoft.com/wbem/wsman/1/windows/EventLog</Uri>
+
+  <ConfigurationMode>Custom</ConfigurationMode>
+
+  <Delivery Mode="Push">
+    <Batching>
+      <MaxItems>5</MaxItems>
+      <MaxLatencyTime>30000</MaxLatencyTime>
+    </Batching>
+    <PushSettings>
+      <Heartbeat Interval="900000"/>
+    </PushSettings>
+  </Delivery>
+
+  <Query>
+    <![CDATA[
+      <QueryList>
+        <Query Id="0" Path="Microsoft-Windows-Sysmon/Operational">
+          <Select Path="Microsoft-Windows-Sysmon/Operational">*</Select>
+        </Query>
+        <Query Id="1" Path="Security">
+          <Select Path="Security">
+            *[System[(EventID=4768 or EventID=4769 or EventID=4771 or EventID=4662 or EventID=5136 or EventID=4728 or EventID=4732 or EventID=4756 or EventID=4720 or EventID=4724 or EventID=4738)]]
+          </Select>
+        </Query>
+      </QueryList>
+    ]]>
+  </Query>
+
+  <ReadExistingEvents>false</ReadExistingEvents>
+  <TransportName>HTTP</TransportName>
+  <ContentFormat>RenderedText</ContentFormat>
+  <Locale Language="en-US"/>
+  <LogFile>ForwardedEvents</LogFile>
+  <PublisherName>Microsoft-Windows-EventCollector</PublisherName>
+
+  <AllowedSourceNonDomainComputers/>
+  <!--
+    SDDL granting the domain's built-in "Domain Computers" and "Network
+    Service" access to source events — the standard AllowedSourceDomainComputers
+    default. Not machine-specific (no SIDs baked in), so this is safe to
+    keep as-is rather than templated per environment.
+  -->
+  <AllowedSourceDomainComputers>O:NSG:NSD:(A;;GA;;;DC)(A;;GA;;;NS)</AllowedSourceDomainComputers>
+</Subscription>

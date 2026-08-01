@@ -33,7 +33,17 @@ truth for what actually works. As of this handbook:
         43 passing tests). `MODE=live` (real tool execution) is implemented
         but unexercised - there is no lab or installed offensive tooling to
         run it against yet.
-  * Phases 2, 4-7 (telemetry, detections, platform, IR) ................ NOT
+  * Phase 2 (telemetry: Sysmon, Windows audit policy/SACLs, WEF, ......... WRITTEN,
+    Elastic shipping, baseline queries)                                  NOT DEPLOYED.
+        All config (telemetry/sysmon/, telemetry/windows-audit-policy/,
+        telemetry/wef/, telemetry/winlogbeat/, telemetry/elastic/) is
+        syntax-validated (XML/YAML/JSON parse) but not applied to a real
+        host or cluster - none exists yet. Not wired into config/dc or
+        config/member's Ansible yet either - currently a documented manual
+        procedure. See docs/adr/0006-telemetry-architecture.md for the
+        design (and why Sysmon alone can't detect 4 of this lab's 6
+        implemented misconfigs - Windows Security auditing is required).
+  * Phases 4-7 (detections, platform, IR) ............................... NOT
         STARTED. `make detections-test` and `make platform` are STUBS today.
 
 So the install steps below describe the intended, documented procedure. Expect

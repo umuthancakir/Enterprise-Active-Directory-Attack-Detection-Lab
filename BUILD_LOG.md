@@ -364,3 +364,70 @@ end-to-end (captured in this session's transcript, not committed anywhere
   misconfigs — no Atomic Red Team or Caldera catalog integration yet.
 - Telemetry (Phase 2) is still unwritten — next up, per the operator's
   stated priority order.
+
+## 2026-08-01 — Session 1 continued: telemetry config (Phase 2), handbook.txt tracked
+
+**Operator confirmed `handbook.txt`** (the mystery file flagged last
+session) is theirs, placed from another source — tracked it as-is in one
+commit, then synced its status sections (Phase 1 Ansible validation, Phase
+3 dry-run engine) with actual current state in a second, since it had
+predated that work. Operator also asked that `handbook.txt` be kept in
+sync going forward whenever commands/setup steps change — noting this as
+an ongoing habit for the rest of this build, not a one-time task.
+
+**Work done (Phase 2, pure config — no execution needed to write any of
+this, and none of it has run against a real host, since none exists):**
+
+- `docs/adr/0006-telemetry-architecture.md`: WEF collector (`dc01`) +
+  single Winlogbeat shipper design, chosen over per-host shippers.
+  Documents explicitly that Sysmon cannot see Kerberos ticket operations
+  or AD object access/replication — 4 of this lab's 6 implemented
+  misconfigs (Kerberoasting, AS-REP roasting, ACL abuse, DCSync) are only
+  detectable via Windows Security auditing, not Sysmon.
+- `telemetry/sysmon/sysmon-config.xml` + README: narrow, purpose-built
+  config (not a kitchen-sink community template) — every include/exclude
+  rule traced back to a specific technique in `attack/techniques.py` or a
+  `docs/vulnerabilities.md` item in the README's table.
+- `telemetry/windows-audit-policy/`: 3 PowerShell scripts —
+  `configure-audit-policy.ps1` (6 Advanced Audit Policy subcategories via
+  named `auditpol` calls, not GUIDs, to avoid relying on values I couldn't
+  verify), `configure-dcsync-sacl.ps1` (SACL on the domain NC for the
+  `DS-Replication-Get-Changes[-All]` extended rights — the GUIDs are
+  flagged for verification against a live schema, since I'm not fully
+  certain of them from memory), `configure-object-sacls.ps1` (SACL on
+  `Domain-Backups` so item 4's ACL abuse actually generates an event).
+- `telemetry/wef/subscription.xml` + README: source-initiated WEF
+  subscription pulling Sysmon + the relevant Security event IDs into
+  `dc01`'s `ForwardedEvents`; README covers the GPO + `wecutil` + Security
+  log SDDL steps needed on top of the XML itself.
+- `telemetry/winlogbeat/winlogbeat.yml`: ships Sysmon/Security/
+  ForwardedEvents from `dc01` to Elasticsearch on `siem01`.
+- `telemetry/elastic/`: `docker-compose.yml` (single-node ES + Kibana,
+  sized for a lab), `index-template.json` (extends winlogbeat's default
+  template with this lab's custom fields), README.
+- `telemetry/dashboards/`: `baseline-queries.md` (raw KQL/DSL checks for
+  "is telemetry landing at all," including the actual Kerberoasting/
+  AS-REP-roasting/DCSync detection queries a Phase 4 Sigma rule would be
+  based on) and `baseline-dashboard.ndjson` — explicitly flagged as
+  **hand-authored, not exported from a real Kibana and not import-tested**,
+  since Kibana's saved-object schema is version-specific enough that I
+  don't have confidence in it the way I do the syntax-checked artifacts.
+  The README for that directory says outright which of the two to trust
+  first.
+
+**Verification performed:** every XML file confirmed well-formed
+(`xml.dom.minidom.parse`), every YAML file confirmed valid
+(`yaml.safe_load`), every JSON file confirmed valid (`json.load`,
+including line-by-line for the NDJSON). No execution against a real host —
+none exists.
+
+**Not done / explicitly deferred:**
+
+- None of this is wired into `config/dc`/`config/member`'s Ansible roles
+  yet, or into a new `config/siem/` role (which doesn't exist) — every
+  setup step documented here is currently manual.
+- Wazuh/Splunk (`SIEM_BACKEND` alternatives) have no config — Elastic only.
+- The DCSync SACL GUIDs and the NDJSON dashboard are this batch's two
+  lowest-confidence artifacts specifically because I couldn't verify them
+  against a live system — flagged accordingly rather than presented with
+  the same confidence as the syntax-checked config.

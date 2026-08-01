@@ -1,0 +1,55 @@
+# telemetry/winlogbeat/winlogbeat.yml
+#
+# Deployed to dc01 only (the WEF collector + sole shipper — see
+# docs/adr/0006-telemetry-architecture.md). Ships Sysmon, Security, and the
+# WEF-forwarded events from mem01 (all landing in ForwardedEvents on dc01)
+# to Elasticsearch on siem01.
+#
+# STATUS: written, not deployed/validated against a real Winlogbeat
+# install — see ROADMAP.md.
+
+winlogbeat.event_logs:
+  - name: Microsoft-Windows-Sysmon/Operational
+    tags: [sysmon]
+
+  - name: Security
+    tags: [security-local]
+    # dc01's own local Security events (its own 4768/4769/4662/5136, etc.)
+    # — distinct from mem01's, which arrive via ForwardedEvents below.
+
+  - name: ForwardedEvents
+    tags: [forwarded]
+    # mem01's Sysmon + Security events, per telemetry/wef/subscription.xml.
+    # RenderedText content format in that subscription means these arrive
+    # pre-rendered rather than needing the source machine's manifest.
+
+processors:
+  - add_host_metadata: ~
+  - add_fields:
+      target: eadadl
+      fields:
+        lab: eadadl-lab
+        collector: dc01
+
+output.elasticsearch:
+  hosts: ["https://siem01.eadadl.lab:9200"]
+  username: "elastic"
+  password: "${SIEM_ADMIN_PASSWORD}"
+  ssl.verification_mode: "certificate"
+  # Lab-internal CA — see telemetry/elastic/README.md for how it's
+  # generated (self-signed, single-node, never leaves the isolated
+  # network — consistent with SECURITY.md #1/#5).
+  ssl.certificate_authorities: ["C:\\ProgramData\\eadadl\\ca.crt"]
+
+setup.template.settings:
+  index.number_of_shards: 1
+  index.number_of_replicas: 0
+  # Single-node lab SIEM — no replicas to allocate (see
+  # telemetry/elastic/docker-compose.yml).
+
+logging.level: info
+logging.to_files: true
+logging.files:
+  path: "C:\\ProgramData\\eadadl\\logs"
+  name: winlogbeat
+  keepfiles: 7

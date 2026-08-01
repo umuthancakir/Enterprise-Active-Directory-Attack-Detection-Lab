@@ -1,0 +1,46 @@
+{
+  "index_patterns": ["winlogbeat-*"],
+  "priority": 200,
+  "template": {
+    "settings": {
+      "index": {
+        "number_of_shards": 1,
+        "number_of_replicas": 0
+      }
+    },
+    "mappings": {
+      "properties": {
+        "eadadl": {
+          "properties": {
+            "lab": { "type": "keyword" },
+            "collector": { "type": "keyword" }
+          }
+        },
+        "event": {
+          "properties": {
+            "code": { "type": "keyword" },
+            "action": { "type": "keyword" }
+          }
+        },
+        "winlog": {
+          "properties": {
+            "event_id": { "type": "keyword" },
+            "channel": { "type": "keyword" },
+            "provider_name": { "type": "keyword" },
+            "computer_name": { "type": "keyword" }
+          }
+        },
+        "host": {
+          "properties": {
+            "name": { "type": "keyword" }
+          }
+        },
+        "tags": { "type": "keyword" }
+      }
+    }
+  },
+  "_meta": {
+    "description": "EADADL lab: winlogbeat indices from dc01's Sysmon/Security/ForwardedEvents shipper.",
+    "managed_by": "telemetry/elastic/index-template.json"
+  }
+}

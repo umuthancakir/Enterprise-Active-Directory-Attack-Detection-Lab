@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  telemetry/sysmon/sysmon-config.xml
+
+  Sysmon configuration for dc01/mem01. See telemetry/sysmon/README.md for
+  the rationale behind each event group and, critically, what this config
+  does NOT cover (Kerberos ticket operations, AD object ACL/replication
+  activity — see telemetry/windows-audit-policy/).
+
+  STATUS: written but not deployed/validated against a real Sysmon install
+  (no lab host exists yet — see ROADMAP.md). Schema targets Sysmon v15.
+-->
+<Sysmon schemaversion="4.90">
+  <HashAlgorithms>SHA256</HashAlgorithms>
+  <CheckRevocation/>
+  <DnsLookup>false</DnsLookup>
+
+  <EventFiltering>
+
+    <!-- Event ID 1: Process creation. Core visibility for every technique
+         in attack/techniques.py that runs a tool on a host — this is what
+         a Sigma rule for "netexec/impacket-style LDAP tooling ran here"
+         or "unusual parent/child process" would match against. -->
+    <ProcessCreate onmatch="exclude">
+      <!-- Reduce noise from routine Windows Update / telemetry churn that
+           isn't relevant to this lab's attack surface. Deliberately a
+           short exclude list, not a broad one — over-excluding is how
+           real detections get built on top of gaps. -->
+      <Image condition="end with">MicrosoftEdgeUpdate.exe</Image>
+      <Image condition="end with">msedge_installer.exe</Image>
+    </ProcessCreate>
+
+    <!-- Event ID 3: Network connection. Needed for lateral-movement /
+         C2-style detections and to see SMB/LDAP/Kerberos connection
+         metadata (source port, destination, initiated flag) even though
+         Sysmon can't decode Kerberos ticket contents itself. -->
+    <NetworkConnect onmatch="include">
+      <DestinationPort condition="is">445</DestinationPort>   <!-- SMB -->
+      <DestinationPort condition="is">389</DestinationPort>   <!-- LDAP -->
+      <DestinationPort condition="is">636</DestinationPort>   <!-- LDAPS -->
+      <DestinationPort condition="is">88</DestinationPort>    <!-- Kerberos -->
+      <DestinationPort condition="is">5985</DestinationPort>  <!-- WinRM -->
+      <DestinationPort condition="is">3389</DestinationPort>  <!-- RDP -->
+    </NetworkConnect>
+
+    <!-- Event ID 10: ProcessAccess. The canonical LSASS-access detection
+         point for credential dumping (T1003.001) that could follow a
+         successful DCSync/delegation-ticket chain in attack/chains.py's
+         domain_dominance scenario. -->
+    <ProcessAccess onmatch="include">
+      <TargetImage condition="end with">lsass.exe</TargetImage>
+    </ProcessAccess>
+
+    <!-- Event ID 11: FileCreate, scoped to SYSVOL/NETLOGON. Directly ties
+         to docs/vulnerabilities.md item 7 — this is what would let a
+         Sigma rule flag "a script was written into SYSVOL scripts" as
+         suspicious after the fact, and separately lets us prove (Phase 4)
+         that a technique reading item 7's planted credentials generates
+         visible file-access telemetry. -->
+    <FileCreate onmatch="include">
+      <TargetFilename condition="contains">\SYSVOL\</TargetFilename>
+      <TargetFilename condition="contains">\NETLOGON\</TargetFilename>
+    </FileCreate>
+
+    <!-- Event ID 12/13/14: Registry create/modify/rename. Narrow include
+         list — persistence-relevant keys only (Run keys, services), not a
+         full-registry firehose. -->
+    <RegistryEvent onmatch="include">
+      <TargetObject condition="contains">\CurrentVersion\Run</TargetObject>
+      <TargetObject condition="contains">\Services\</TargetObject>
+    </RegistryEvent>
+
+    <!-- Event ID 19/20/21: WMI event filter/consumer/binding. Classic AD
+         lateral-movement/persistence technique, cheap to cover broadly
+         since it's low-volume in a lab this size. -->
+    <WmiEvent onmatch="exclude"/>
+
+    <!-- Event ID 22: DNS query. Useful recon-phase signal (e.g. a
+         bloodhound-python or netexec run doing bulk LDAP/DNS lookups
+         against dc01) without needing full network capture. -->
+    <DnsQuery onmatch="exclude"/>
+
+  </EventFiltering>
+</Sysmon>

@@ -62,12 +62,24 @@ as safe as this module.
 
 ## Phase 2 — Telemetry & detection pipeline
 
+Built after Phase 3 (attack engine) this session, per operator priority
+order. Every artifact here is pure config — no execution needed to write
+it, but also none of it has run against a real host yet, since none
+exists (see "Known blockers"). [ADR 0006](docs/adr/0006-telemetry-architecture.md)
+records the WEF-collector + single-Winlogbeat-shipper design and, notably,
+that Sysmon alone is insufficient for 4 of this lab's misconfigs
+(Kerberoasting, AS-REP roasting, ACL abuse, DCSync all require Windows
+Security auditing, not Sysmon).
+
 | Item | Status | Notes |
 |---|---|---|
-| Sysmon config | ⬜ | |
-| Windows Event Forwarding | ⬜ | |
-| SIEM shipping (Elastic/Wazuh) | ⬜ | |
-| Baseline dashboards proving events land | ⬜ | |
+| Sysmon config (`telemetry/sysmon/`) | ✅ | well-formed XML confirmed; not deployed/validated against a real Sysmon install |
+| Windows Security audit policy + SACLs for Kerberos/DCSync/ACL-abuse detection (`telemetry/windows-audit-policy/`) | ✅ | 3 PowerShell scripts, not run against a real domain; DCSync extended-rights GUIDs flagged for verification |
+| Windows Event Forwarding (`telemetry/wef/`) | ✅ | subscription XML well-formed; GPO/wecutil setup documented but manual, not yet in Ansible |
+| SIEM shipping — Elastic (`telemetry/winlogbeat/`, `telemetry/elastic/`) | ✅ | winlogbeat.yml + docker-compose + index template, all syntax-validated (YAML/JSON parse); not run against a real Elasticsearch cluster |
+| SIEM shipping — Wazuh/Splunk (alternate `SIEM_BACKEND` values) | ⬜ | declared in `.env.example`, no config exists — Elastic only |
+| Baseline dashboards proving events land (`telemetry/dashboards/`) | 🚧 | `baseline-queries.md` (raw KQL/DSL, the reliable version) done; `baseline-dashboard.ndjson` is a hand-authored, **not import-tested** Kibana export — see that directory's README for why the queries are the artifact to trust first |
+| Wired into `config/dc`/`config/member`/`config/siem` Ansible | ⬜ | everything above is currently a manual/documented procedure, not automated — tracked follow-up |
 
 ## Phase 3 — Attack scenario engine
 

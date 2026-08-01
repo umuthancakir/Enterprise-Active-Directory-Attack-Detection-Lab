@@ -1,0 +1,54 @@
+# telemetry/elastic/docker-compose.yml
+#
+# Runs ON siem01 (deployed by config/siem/ Ansible — not written yet, see
+# ROADMAP.md). Single-node Elasticsearch + Kibana, sized for a lab, not
+# production. Distinct from platform/docker-compose.yml (Phase 5), which
+# runs the FastAPI/Postgres/frontend platform layer OUTSIDE the lab
+# network entirely — this compose file is part of the lab itself.
+#
+# STATUS: written, not run — no siem01 host exists yet (see ROADMAP.md).
+
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
+    container_name: eadadl-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=true
+      - ELASTIC_PASSWORD=${SIEM_ADMIN_PASSWORD}
+      # Single-node lab sizing — not a production heap size.
+      - ES_JAVA_OPTS=-Xms2g -Xmx2g
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+      - ./certs:/usr/share/elasticsearch/config/certs:ro
+    ports:
+      - "9200:9200"
+    networks:
+      - eadadl-siem
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.15.0
+    container_name: eadadl-kibana
+    depends_on:
+      - elasticsearch
+    environment:
+      - ELASTICSEARCH_HOSTS=https://elasticsearch:9200
+      - ELASTICSEARCH_USERNAME=kibana_system
+      - ELASTICSEARCH_PASSWORD=${SIEM_ADMIN_PASSWORD}
+    volumes:
+      - ./certs:/usr/share/kibana/config/certs:ro
+    ports:
+      - "5601:5601"
+    networks:
+      - eadadl-siem
+
+networks:
+  eadadl-siem:
+    driver: bridge
+
+volumes:
+  esdata:
