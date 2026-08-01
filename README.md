@@ -1,6 +1,6 @@
 # EADADL — Enterprise Active Directory Attack & Detection Lab
 
-[![CI](https://img.shields.io/badge/CI-not_yet_running-lightgrey)](/.github/workflows)
+[![CI](https://github.com/umuthancakir/Enterprise-Active-Directory-Attack-Detection-Lab/actions/workflows/ci.yml/badge.svg)](https://github.com/umuthancakir/Enterprise-Active-Directory-Attack-Detection-Lab/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Status](https://img.shields.io/badge/status-build_in_progress-orange)](ROADMAP.md)
 

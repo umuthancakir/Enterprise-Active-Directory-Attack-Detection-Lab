@@ -183,50 +183,73 @@ same confidence. See `platform/README.md`.
 
 ## Known blockers
 
-- **No local admin/sudo on this Mac — but this is narrower than it first
-  looked.** Homebrew itself cannot be installed by this account, which
-  blocks **Packer, QEMU, and UTM's underlying tooling specifically** (they
-  have no pip/pure-Python install path). It does NOT block Python tooling
-  or Ansible: `pytest`, `ruff`, `mypy`, `ansible-core`, and `ansible-lint`
-  all installed successfully via `pip install --user` (no sudo needed) —
-  see BUILD_LOG.md. So: `make up` (which needs Packer/QEMU) still can't run
-  locally; `make lint`/`make test` (Python + Ansible-lint) now can and do.
-  Someone with admin rights still needs to run the Homebrew installer, or
-  grant this account admin/sudo, before a real VM can be built.
-- **Packer/UTM code is unvalidated against real Packer/QEMU/UTM.** None of
-  `infra/local/packer/*.pkr.hcl`, `Autounattend.xml`, the Kali preseed, or
-  `generate_bundles.py`'s plist key assumptions have been build-tested —
-  see the blocker above. `packer fmt`/`packer validate` specifically (as
-  opposed to Python/Ansible) still can't run locally; CI's
-  `packer-validate` job is the only current validation, and it checks
-  syntax only, not that a build actually succeeds.
-- **UTM VM boot is a manual step.** `make up` builds images and generates
-  `.utm` bundles but cannot start them — UTM has no verified CLI path for
-  that (see `infra/local/README.md`). The operator opens UTM and starts
-  the 4 VMs by hand before `make sync-scope` can find their IPs (which
-  also requires manually reading each guest's IP into
-  `infra/local/discovered-ips.yaml` — see that file's `.example` for why
-  this isn't automated either).
-- **Ansible roles are syntax/lint-clean but unvalidated against a real
-  target.** `ansible-playbook --syntax-check` passes and `ansible-lint
-  config/` is clean at the production profile (both now actually run, not
-  assumed — see above), but there is still no real WinRM-reachable Windows
-  host to execute against. The misconfig-4 ACL-grant PowerShell and the
-  Kerberoasting/AS-REP-roasting setup are the parts most worth re-checking
-  by hand once a target exists, since they're the core of what makes the
-  lab useful and PowerShell-inside-`win_shell` is invisible to
-  `ansible-lint`.
-- **Node.js and Docker are blocked the same way Packer/QEMU are.** Both
-  need Homebrew, which needs admin rights this account doesn't have. This
-  is why `platform/backend/` (pure Python) could be fully tested this
-  session while `platform/frontend/` (Node.js) and
-  `platform/docker-compose.yml` (Docker) could not — not a difference in
-  effort, a difference in what's pip-installable versus what needs a
-  system package manager.
-- **No CI has ever actually run.** This repo has no git remote configured
-  (`git remote -v` is empty) — every "CI does X" claim throughout this
-  project (and there are many, across `ROADMAP.md` and `BUILD_LOG.md`) is
-  a claim about what `.github/workflows/ci.yml` *would* do, verified by
-  reproducing the same commands locally, not by an observed GitHub
-  Actions run. Push this branch to a real remote for the first genuine
-  end-to-end validation of the CI configuration itself.
+- **✅ RESOLVED: no CI had ever actually run.** As of `main`@`85825bf`
+  (2026-08-01, session 3), this repo is on a real GitHub remote and CI has
+  run for real, twice. **Run 1 (`09bbcfb`) found 2 real failures** on a
+  clean runner that local reproduction had never caught: `packer fmt`
+  drift (the 3 `.pkr.hcl` files had never been formatted, since Packer
+  wasn't installed locally at the time) and a backend `mypy` failure
+  (`types-python-jose` had been installed ad-hoc on the dev machine during
+  troubleshooting but never added to `platform/backend/pyproject.toml`).
+  Investigating the Packer failure surfaced two more real bugs: CI's
+  `packer-validate` job ran from the wrong working directory (the
+  templates' relative paths are relative to the repo root, matching how
+  `build.sh`/`build-linux.sh` actually invoke packer, not
+  `infra/local/packer/`), and the `windows-update` provisioner needs a
+  plugin declaration it didn't have. **Run 2 (`85825bf`) is fully green —
+  all 6 jobs pass.** See BUILD_LOG.md session 3 for the full account,
+  including a self-caught error: the placeholder SHA-256 checksum used
+  for `packer validate` was miscounted by hand (wrong number of zeros) —
+  twice — while fixing this, before being generated and length-checked
+  programmatically instead of hand-typed.
+- **Revised finding: this account has less-restricted permissions than
+  earlier sessions assumed — the real constraint is no interactive TTY,
+  not "no admin rights."** `id` shows this account IS a member of the
+  `admin` group. `sudo`/Homebrew installation still can't run here because
+  they require an interactive password prompt this non-interactive shell
+  environment can't provide (`git`'s HTTPS auth failed the same way:
+  `could not read Username... Device not configured`) — not because the
+  account lacks the underlying privilege. This distinction mattered in
+  practice: **Packer and the GitHub CLI (`gh`) are both now installed and
+  working**, via their official standalone release binaries downloaded
+  directly from `releases.hashicorp.com`/GitHub releases into
+  `~/.local/bin` — no Homebrew, no sudo, no interactive prompt needed.
+  `gh auth login`'s device-code flow (a *browser-side* interactive step
+  the operator completes, not a local TTY prompt) was how git push
+  authentication got resolved too.
+- **QEMU itself is still not installed — this is the actual remaining
+  blocker for `make up`.** Packer's QEMU *builder* is now installed and
+  validated (`packer fmt`/`init`/`validate` all pass locally, matching
+  CI), but Packer's QEMU builder shells out to `qemu-system-x86_64`/
+  `qemu-system-aarch64` *at build time* to actually boot and install the
+  VM — those binaries aren't installed, and QEMU doesn't distribute
+  standalone macOS binaries the way Packer/gh do (it's normally a
+  Homebrew/MacPorts package with many shared-library dependencies). So:
+  `packer build` (and therefore `make up`) still can't run locally.
+  `infra/local/packer/*.pkr.hcl`, `Autounattend.xml`, the Kali preseed,
+  and `generate_bundles.py`'s plist key assumptions remain unvalidated
+  against a real build for this reason — narrower than before, but real.
+- **UTM VM boot is a manual step.** `make up` (once QEMU is available)
+  builds images and generates `.utm` bundles but cannot start them — UTM
+  has no verified CLI path for that (see `infra/local/README.md`). The
+  operator opens UTM and starts the 4 VMs by hand before `make sync-scope`
+  can find their IPs (which also requires manually reading each guest's
+  IP into `infra/local/discovered-ips.yaml` — see that file's `.example`
+  for why this isn't automated either).
+- **Ansible roles are syntax/lint-clean and CI-verified, but unvalidated
+  against a real target.** `ansible-playbook --syntax-check` passes and
+  `ansible-lint config/` is clean at the production profile — both now
+  verified in CI on every push, not just locally — but there is still no
+  real WinRM-reachable Windows host to execute against (blocked on QEMU,
+  same as above). The misconfig-4 ACL-grant PowerShell and the
+  Kerberoasting/AS-REP-roasting setup are the parts most worth
+  re-checking by hand once a target exists, since PowerShell-inside-
+  `win_shell` is invisible to `ansible-lint`.
+- **Node.js and Docker remain unavailable — same root cause as QEMU, not
+  Packer/gh's.** Both are normally installed via a system package manager
+  with dependencies that don't reduce to a single portable binary the way
+  Packer/gh do. `platform/frontend/`'s `npm install`/`eslint`/`tsc`/`npm
+  test` and `platform/docker-compose.yml` have never run locally — but
+  **both are now verified in CI** (the `frontend` job passed on the first
+  real run, without ever running locally first — a genuinely useful data
+  point that the hand-written TypeScript was correct).
