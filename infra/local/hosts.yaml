@@ -1,0 +1,46 @@
+# infra/local/hosts.yaml
+#
+# Declarative host list consumed by generate_bundles.py. This is the local
+# deploy target's equivalent of infra/azure/variables.tf's per-VM config —
+# see docs/adr/0004-revert-to-local-utm.md for why there are 4 hosts here
+# instead of the original 5 (workstation dropped for now).
+
+network:
+  # UTM Host Only networking — see docs/adr/0005-local-network-isolation.md.
+  # All 4 VMs share this one host-only interface name so they land on the
+  # same segment and can reach each other.
+  utm_host_only_interface: "eadadl-hostonly"
+
+hosts:
+  - id: dc01
+    role: domain_controller
+    arch: x86_64
+    template: infra/local/templates/x86_64-blank.utm
+    image: infra/local/build/images/dc01/dc01.qcow2
+    cpus: 2
+    memory_mb: 4096
+
+  - id: mem01
+    role: member_server
+    arch: x86_64
+    template: infra/local/templates/x86_64-blank.utm
+    image: infra/local/build/images/mem01/mem01.qcow2
+    cpus: 2
+    memory_mb: 4096
+    depends_on: dc01
+
+  - id: attacker01
+    role: attacker
+    arch: arm64
+    template: infra/local/templates/arm64-blank.utm
+    image: infra/local/build/images/attacker01/attacker01.qcow2
+    cpus: 2
+    memory_mb: 4096
+
+  - id: siem01
+    role: siem
+    arch: arm64
+    template: infra/local/templates/arm64-blank.utm
+    image: infra/local/build/images/siem01/siem01.qcow2
+    cpus: 2
+    memory_mb: 4096

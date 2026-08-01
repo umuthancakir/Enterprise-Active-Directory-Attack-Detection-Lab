@@ -2,7 +2,7 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 ENV_FILE := .env
-TF_DIR := infra/azure
+LOCAL_DIR := infra/local
 
 # ---- environment ----------------------------------------------------------
 
@@ -22,28 +22,43 @@ check-env:
 
 .PHONY: check-tools
 check-tools: ## Verify required local tooling is installed
-	@command -v terraform >/dev/null 2>&1 || (echo "terraform not found — see README.md Prerequisites" && exit 1)
-	@command -v az >/dev/null 2>&1 || (echo "az CLI not found — see README.md Prerequisites" && exit 1)
+	@command -v packer >/dev/null 2>&1 || (echo "packer not found — see README.md Prerequisites" && exit 1)
+	@command -v qemu-system-x86_64 >/dev/null 2>&1 || (echo "qemu not found — see README.md Prerequisites" && exit 1)
 	@command -v ansible >/dev/null 2>&1 || (echo "ansible not found — see README.md Prerequisites" && exit 1)
 	@echo "All required tools found."
 
-# ---- lab lifecycle ----------------------------------------------------------
+# ---- lab lifecycle (DEPLOY_TARGET=local, UTM/QEMU — see docs/adr/0004) ----
+#
+# `make up` does NOT fully automate VM boot: UTM has no CLI to start a VM
+# from a script in a way this project has been able to verify (see
+# infra/local/README.md), so after this target you still open UTM and start
+# the 4 generated VMs by hand, then run `make sync-scope`. See
+# infra/local/README.md "Build → generate → boot → sync" for the full,
+# honest step-by-step.
 
 .PHONY: up
-up: check-env check-tools ## Provision the isolated AD lab (terraform apply)
-	cd $(TF_DIR) && terraform init && terraform apply
+up: check-env check-tools ## Build images + generate UTM bundles (see infra/local/README.md for the manual boot step this can't automate)
+	$(LOCAL_DIR)/build.sh dc01
+	$(LOCAL_DIR)/build.sh mem01
+	$(LOCAL_DIR)/build-linux.sh attacker01
+	$(LOCAL_DIR)/build-linux.sh siem01
+	python3 $(LOCAL_DIR)/generate_bundles.py
+	@echo ""
+	@echo "Bundles generated. Open UTM, start dc01/mem01/attacker01/siem01,"
+	@echo "then run: make sync-scope"
 
 .PHONY: down
-down: check-env check-tools ## Tear down the isolated AD lab (terraform destroy)
-	cd $(TF_DIR) && terraform destroy
-
-.PHONY: plan
-plan: check-env check-tools ## Show the terraform plan without applying
-	cd $(TF_DIR) && terraform init && terraform plan
+down: ## Tear down the lab: delete generated bundles + built images
+	@echo "Delete each .utm bundle from UTM's VM library (see infra/local/state.json for paths),"
+	@echo "then: rm -rf $(LOCAL_DIR)/build $(LOCAL_DIR)/state.json"
+	## STATUS: not scripted further than this — deleting a running VM's
+	## bundle out from under UTM needs the VM stopped first, which this
+	## Makefile can't confirm without the UTM CLI verification called out in
+	## infra/local/README.md. See ROADMAP.md.
 
 .PHONY: sync-scope
-sync-scope: ## Refresh inventory/lab-scope.yaml from terraform outputs
-	python3 scripts/sync_scope.py  ## STATUS: STUB — see ROADMAP.md Phase 1
+sync-scope: ## Refresh inventory/lab-scope.yaml from infra/local/state.json + discovered-ips.yaml
+	python3 scripts/sync_scope.py
 
 # ---- attack / detections ----------------------------------------------------
 
@@ -65,8 +80,10 @@ platform: check-env ## Serve the platform (backend + frontend) locally via docke
 # ---- quality -----------------------------------------------------------
 
 .PHONY: lint
-lint: ## Run all linters (terraform fmt, ansible-lint, ruff, eslint)
-	@echo "terraform fmt -check"; cd $(TF_DIR) && terraform fmt -check -recursive || true
+lint: ## Run all linters (packer validate, ansible-lint, ruff, eslint)
+	@echo "packer validate (windows-server)"; packer validate $(LOCAL_DIR)/packer/windows-server.pkr.hcl || true
+	@echo "packer validate (kali-attacker)"; packer validate $(LOCAL_DIR)/packer/kali-attacker.pkr.hcl || true
+	@echo "packer validate (ubuntu-siem)"; packer validate $(LOCAL_DIR)/packer/ubuntu-siem.pkr.hcl || true
 	@echo "STATUS: ansible-lint / ruff / eslint not wired up yet — see ROADMAP.md"
 
 .PHONY: test

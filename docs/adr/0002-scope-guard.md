@@ -15,7 +15,9 @@ hard safety requirement, not a best-effort one (see SECURITY.md #2).
 
 - `inventory/lab-scope.yaml` is the single, version-controlled source of
   truth for every host the attack engine is permitted to target. It records
-  hostname/IP, role, and the Terraform-managed resource it corresponds to.
+  hostname/IP, role, and the infra-managed build artifact it corresponds to
+  (see [ADR 0004](0004-revert-to-local-utm.md) for the current local
+  UTM/QEMU deploy target).
 - Every entry point into the attack engine (CLI runner in `attack/`, and
   later the FastAPI runner endpoint in `platform/backend/`) resolves its
   target(s) through one shared scope-guard function before invoking any
@@ -29,8 +31,9 @@ hard safety requirement, not a best-effort one (see SECURITY.md #2).
   rejected before any subprocess/tool invocation happens, using a mocked
   executor so the test itself never shells out.
 - `inventory/lab-scope.yaml` is regenerated (or diffed and reviewed) by
-  Terraform outputs after `make up`, so the authorized list always matches
-  what's actually provisioned rather than drifting from it.
+  `scripts/sync_scope.py` after `make up` + the manual VM-boot step (see
+  `infra/local/README.md`), so the authorized list always matches what's
+  actually provisioned rather than drifting from it.
 
 ## Alternatives considered
 

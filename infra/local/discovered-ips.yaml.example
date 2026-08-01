@@ -1,0 +1,18 @@
+# infra/local/discovered-ips.yaml.example
+#
+# Copy to infra/local/discovered-ips.yaml (gitignored — these IPs are
+# specific to your machine's DHCP leases and change across rebuilds) and
+# fill in each host's IP once it has booted.
+#
+# Why manual: UTM's host-only networking (vmnet.framework) doesn't expose a
+# documented, scriptable way to look up a guest's DHCP-assigned IP from the
+# host side that this project could verify without a real UTM install (see
+# infra/local/README.md). Rather than ship an IP-discovery mechanism that
+# might silently do the wrong thing, scripts/sync_scope.py requires you to
+# read each IP from inside the guest (`ip addr` on Linux, `ipconfig` on
+# Windows, via the UTM console) and record it here.
+
+dc01: null
+mem01: null
+attacker01: null
+siem01: null

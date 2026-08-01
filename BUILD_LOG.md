@@ -101,3 +101,75 @@ once this is pushed to GitHub.
   within the subnet rather than a scoped port matrix (AD/Kerberos/SMB/WinRM/
   SIEM-shipping ports specifically) — flagged as a Phase 1 hardening
   follow-up in ADR 0003, not yet done.
+
+## 2026-08-01 — Session 1 continued: deploy target reverted to local UTM/QEMU
+
+**Correction of a false premise:** the operator opened this segment
+claiming Azure had errored (an AADSTS50058 error) and that a prior session
+had already switched to UTM/QEMU. Verified before acting: `az` CLI was
+still not on PATH, there was no credential error anywhere in this session's
+actual history, and no UTM/QEMU files existed in the repo or git log. Flagged
+this to the operator directly rather than acting on the false premise; the
+operator then made an explicit, independent decision to switch to local
+regardless (not because Azure had failed) — recorded as such in
+[ADR 0004](docs/adr/0004-revert-to-local-utm.md) so this doesn't read as "we
+hit a bug and worked around it" to a future reader.
+
+**Work done (per operator instruction, still code-only — no packer/qemu
+build has been run, this account still lacks the sudo access needed to
+install them):**
+
+- ADR 0004 (revert to local UTM/QEMU) and ADR 0005 (local network
+  isolation model — UTM Host Only networking) written. ADR 0001 and ADR
+  0003 marked superseded rather than deleted, so the Azure attempt stays
+  in the record as a real, reasoned decision that was later reversed —
+  not scrubbed from history.
+- `infra/azure/` removed (`git rm -r`) — recoverable from git history at
+  commit `67ce0f3`.
+- `infra/local/` written: `packer/windows-server.pkr.hcl` (Windows Server
+  2022, x86_64 TCG emulation, for `dc01`/`mem01`) with
+  `http-windows/Autounattend.xml` + `bootstrap.ps1`; `packer/kali-attacker.pkr.hcl`
+  (native arm64, Debian-installer preseed) with `http-linux/preseed.cfg`;
+  `packer/ubuntu-siem.pkr.hcl` (native arm64, cloud-init/NoCloud) with
+  `http-linux/user-data.tmpl` + `meta-data`; `build.sh` / `build-linux.sh`
+  wrapper scripts (handle the password/SSH-key templating Packer's
+  `cd_files` can't do on its own); `generate_bundles.py` (mutates a
+  manually-created blank `.utm` template's `config.plist` via `plistlib`
+  rather than authoring UTM's undocumented bundle format from scratch —
+  see that script's docstring for why); `hosts.yaml` (4-host declarative
+  list); `infra/local/README.md` (the honest "what's automated vs. manual"
+  guide, including the one-time blank-template GUI step).
+- Footprint trimmed from 5 to 4 hosts: `wks01` (workstation) dropped. Both
+  `docs/vulnerabilities.md` (items 5 and 8, which depended on a 2nd non-DC
+  Windows host) and the README architecture diagram updated to reflect
+  this, with reintroducing `wks01` documented as an option rather than a
+  silently dropped requirement.
+- `scripts/sync_scope.py` rewritten: no more `terraform output`; reads
+  `infra/local/state.json` (from `generate_bundles.py`) plus a
+  **manually-maintained** `infra/local/discovered-ips.yaml` — UTM's
+  host-only networking has no verified scriptable way to look up a guest's
+  DHCP-assigned IP from the host side, so this was deliberately left
+  manual rather than shipping an unverified auto-discovery mechanism.
+- `Makefile`, `.env.example`, `README.md`, `.github/workflows/ci.yml`
+  (`terraform-validate` → `packer-validate`), `CONTRIBUTING.md`,
+  `inventory/lab-scope.yaml`, and ADR 0002 all updated to stop assuming a
+  Terraform/Azure backend.
+
+**Not done / explicitly deferred:**
+
+- No Packer build has been run; no qcow2 images exist. This account still
+  lacks sudo, so Homebrew (and therefore `packer`/`qemu`/`ansible`) still
+  can't be installed locally — the local pivot removes the Azure
+  credential/cost dependency, not this blocker (see ADR 0004
+  Consequences).
+- The one-time blank `.utm` template creation (manual, via UTM's GUI) has
+  not been performed, and `generate_bundles.py`'s `config.plist` key
+  assumptions are unverified against a real UTM bundle — see
+  `infra/local/README.md` step 3.
+- The Kali ARM64 installer preseed (`preseed.cfg`) is the least-proven
+  artifact in this batch — Kali's ARM64 d-i preseed support is less
+  commonly documented than Debian/Ubuntu's; flagged in ROADMAP.md rather
+  than presented as equally solid to the Ubuntu cloud-init path.
+- AD DS promotion, domain join, OU/user/group creation, and the 6
+  (of 8, with 2 deferred) implementable misconfigurations remain
+  unimplemented Ansible work — next up this session.

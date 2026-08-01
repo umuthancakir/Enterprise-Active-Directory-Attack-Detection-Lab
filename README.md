@@ -47,23 +47,19 @@ demo.
 
 ```mermaid
 flowchart TB
-    subgraph Lab["Isolated Lab Network (Azure vnet / no internet route)"]
-        DC["Domain Controller\n(Windows Server)"]
-        MEM["Member Server(s)"]
-        WKS["Workstation"]
-        ATT["Attacker Box\n(Kali-based)"]
-        SIEM["SIEM Host\n(Elastic/Wazuh)"]
+    subgraph Lab["Isolated Lab Network (UTM host-only vmnet segment, no internet route)"]
+        DC["dc01\nDomain Controller\n(Windows Server, x86_64 emulated)"]
+        MEM["mem01\nMember Server\n(Windows Server, x86_64 emulated)"]
+        ATT["attacker01\nAttacker Box\n(Kali, native arm64)"]
+        SIEM["siem01\nSIEM Host\n(Elastic/Wazuh, native arm64)"]
         DC <--> MEM
-        DC <--> WKS
         ATT -.attacks.-> DC
         ATT -.attacks.-> MEM
-        ATT -.attacks.-> WKS
         DC -- Sysmon/WEF --> SIEM
         MEM -- Sysmon/WEF --> SIEM
-        WKS -- Sysmon/WEF --> SIEM
     end
 
-    subgraph Platform["Platform Layer (Docker Compose, outside the lab vnet)"]
+    subgraph Platform["Platform Layer (Docker Compose, outside the lab network)"]
         API["FastAPI backend\n(runner, history, coverage API, RBAC)"]
         DB[("PostgreSQL")]
         UI["React/Next frontend\n(dashboard, Navigator heatmap, reports)"]
@@ -71,20 +67,26 @@ flowchart TB
         UI <--> API
     end
 
-    Operator(("Operator")) --> UI
+    Operator(("Operator\n(the host Mac itself)")) --> UI
+    Operator -.UTM console.-> Lab
     API -- reads --> Scope["inventory/lab-scope.yaml\n(scope guard)"]
     API -- orchestrates --> ATT
     API -- queries --> SIEM
     Detections["detections/ (Sigma + tests)"] -- validated against --> SIEM
 ```
 
+*A standalone `wks01` workstation was dropped from this footprint to keep
+emulated-x86_64 VM count low — see
+[ADR 0004](docs/adr/0004-revert-to-local-utm.md). Reintroducing it is a
+documented option, not a removed requirement.*
+
 ## Repository layout
 
 ```
 eadadl/
 ├── inventory/     # lab-scope.yaml — the ONLY authorized attack targets
-├── infra/         # Terraform — the AD environment as code (Azure)
-├── config/        # Ansible roles: DC, members, workstation, attacker, SIEM
+├── infra/         # Packer + UTM bundle generator — the AD environment as code (local)
+├── config/        # Ansible roles: DC, members, attacker, SIEM
 ├── telemetry/     # Sysmon config, WEF/forwarding, SIEM shipping
 ├── attack/        # scenario engine: atomic techniques + chains, ATT&CK-tagged
 ├── detections/    # Sigma rules + tests, ATT&CK mapping, detection-as-code
@@ -98,14 +100,24 @@ eadadl/
 
 ## Deployment target
 
-`DEPLOY_TARGET=azure` (see [`docs/adr/0001-deploy-target.md`](docs/adr/0001-deploy-target.md)
-for why). This Mac is Apple Silicon (arm64); VirtualBox has no reliable
-Windows-guest support on arm64 hosts, and Microsoft does not publish ARM64
-Windows Server media through normal public channels, so a genuine local
-Windows Server lab isn't practical here. Terraform provisions an isolated
-resource group and vnet in Azure instead — real Windows Server VMs, native
-speed, easy teardown, at the cost of requiring Azure credentials and
-incurring cloud spend while the lab is up.
+`DEPLOY_TARGET=local`, running on UTM/QEMU (see
+[`docs/adr/0004-revert-to-local-utm.md`](docs/adr/0004-revert-to-local-utm.md)
+for the full reasoning, including why this was originally attempted on
+Azure first). This Mac is Apple Silicon (arm64); Windows Server has no
+practical ARM64 path, so `dc01`/`mem01` run under QEMU's software (TCG)
+x86_64 emulation — genuine but slow — while `attacker01` (Kali) and `siem01`
+(Ubuntu) run as native arm64 guests with no emulation overhead. Network
+isolation is enforced via UTM's Host Only mode (no lab VM gets a NAT/
+internet-facing adapter) — see
+[`docs/adr/0005-local-network-isolation.md`](docs/adr/0005-local-network-isolation.md).
+
+UTM has no CLI to declaratively create VMs, so unlike a typical
+Terraform-driven lab, provisioning here is Packer (builds the disk images)
++ a small Python generator (assembles UTM `.utm` bundles from a one-time
+manually-created blank template) + a manual "start these 4 VMs in the UTM
+app" step that isn't scriptable — see
+[`infra/local/README.md`](infra/local/README.md) for the honest full
+picture, including what's automated and what isn't.
 
 ### Prerequisites
 
@@ -114,15 +126,20 @@ install Homebrew itself — run these as an admin, or ask an admin to run them
 once):
 
 ```bash
-brew install terraform packer ansible azure-cli
+brew install packer qemu ansible
 ```
 
-### Quick start (once infra/ is buildable — see ROADMAP.md)
+UTM.app (a GUI hypervisor, not a Homebrew package) must already be
+installed — it was present on this machine already.
+
+### Quick start (once infra/local/ is buildable — see ROADMAP.md)
 
 ```bash
-az login                      # interactive browser auth
-cp .env.example .env          # fill in AZURE_SUBSCRIPTION_ID and region
-make up                       # terraform apply the lab
+cp .env.example .env          # fill in ADMIN_PASSWORD + ISO URLs/checksums
+# One-time: create the two blank UTM templates — see infra/local/README.md
+make up                       # packer build + generate .utm bundles
+# Open UTM, start dc01/mem01/attacker01/siem01, wait for boot
+make sync-scope                # record booted VMs' IPs into inventory/lab-scope.yaml
 make attack SCENARIO=<name>   # run an attack chain against in-scope hosts
 make detections-test          # prove the matching Sigma rules fire
 make platform                 # serve the dashboard/UI locally

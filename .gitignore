@@ -4,7 +4,7 @@
 *.key
 !config/**/*.example
 
-# Terraform
+# Terraform (kept for reference/history — see docs/adr/0004-revert-to-local-utm.md)
 **/.terraform/*
 *.tfstate
 *.tfstate.*
@@ -13,6 +13,16 @@
 crash.log
 crash.*.log
 .terraform.lock.hcl
+
+# infra/local (UTM/QEMU) build artifacts and machine-specific state
+infra/local/build/
+infra/local/templates/
+infra/local/state.json
+infra/local/discovered-ips.yaml
+infra/local/packer/http-windows/.Autounattend.*.xml
+infra/local/packer/http-linux/user-data
+infra/local/packer/http-linux/authorized_keys
+*.qcow2
 
 # Python
 __pycache__/

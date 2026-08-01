@@ -17,25 +17,30 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started · 🧪 STUB (present bu
 | Makefile skeleton | 🚧 | |
 | ADR framework + ADR 0001 (deploy target), ADR 0002 (scope guard) | 🚧 | |
 | CI skeleton (`.github/workflows`) | ⬜ | |
-| Homebrew / Terraform / Ansible / Packer / Azure CLI installed locally | ⬜ | **blocked**: this account lacks sudo; needs an admin to run the installer |
+| Homebrew / Packer / QEMU / Ansible installed locally | ⬜ | **blocked**: this account lacks sudo; needs an admin to run the installer |
 
 ## Phase 1 — Isolated AD environment (IaC)
 
+`DEPLOY_TARGET` is `local` (UTM/QEMU) as of ADR 0004 — the earlier
+`infra/azure/` Terraform (ADR 0001/0003) was removed from the tree; it's
+recoverable from git history at commit `67ce0f3` if that path is ever
+revisited. Footprint trimmed to 4 hosts (no standalone workstation) — see
+ADR 0004.
+
 | Item | Status | Notes |
 |---|---|---|
-| Terraform azurerm: resource group, vnet, NSGs (no internet route) | ✅ | code written, not yet `apply`'d or `validate`'d (no local terraform binary) — see ADR 0003 |
-| Azure Bastion (sole inbound mgmt path, no public IP on lab hosts) | ✅ | code written, not yet applied |
-| Domain Controller VM (Terraform) | ✅ | VM only — AD DS role config below |
-| Member server VM (Terraform) | ✅ | VM only |
-| Workstation VM (Terraform) | ✅ | VM only |
-| Attacker box VM (Kali, Terraform) | ✅ | VM only; marketplace agreement handled in code |
-| SIEM host VM (Terraform) | ✅ | VM only |
-| `scripts/sync_scope.py` (terraform output → lab-scope.yaml) | ✅ | written, not yet run (nothing provisioned) |
+| Packer: Windows Server 2022 template (dc01/mem01, x86_64 TCG-emulated) | ✅ | code written, not build-tested — no local packer/qemu install (see BUILD_LOG.md) |
+| Autounattend.xml + bootstrap.ps1 (unattended install, WinRM enable) | ✅ | written, not validated against a real install |
+| Packer: Kali ARM64 template (attacker01, native, preseed-driven) | ✅ | written; Kali ARM64 installer preseed is the least-proven part — see BUILD_LOG.md |
+| Packer: Ubuntu ARM64 template (siem01, native, cloud-init) | ✅ | written, cloud-init is a well-trodden pattern |
+| `generate_bundles.py` (.utm bundle assembly from a manual blank template) | ✅ | plist key names are best-effort, unverified against a real UTM install — see infra/local/README.md |
+| One-time blank UTM template creation (arm64 + x86_64) | ⬜ | manual GUI step, not yet performed |
+| `scripts/sync_scope.py` (local state + manual IP entry → lab-scope.yaml) | ✅ | written, not yet run (nothing built) |
 | AD DS role config + domain promotion (`config/dc/` Ansible) | ⬜ | |
-| Member/workstation domain join (`config/member/`, `config/workstation/`) | ⬜ | |
+| Member domain join (`config/member/` Ansible) | ⬜ | |
 | Synthetic OU/users/groups | ⬜ | |
-| Deliberate misconfigs implemented (design documented in `docs/vulnerabilities.md`, 8 items, all "Planned") | ⬜ | |
-| `make up` / `make down` actually provision/destroy | ⬜ | requires Azure credentials + local terraform — not run yet |
+| Deliberate misconfigs implemented (6 of 8 planned for this footprint — items 5/8 deferred, need `wks01`; see `docs/vulnerabilities.md`) | ⬜ | |
+| `make up` (build images + generate bundles) / manual VM boot / `make sync-scope` | ⬜ | requires local Packer/QEMU/Ansible — not run yet |
 
 ## Phase 2 — Telemetry & detection pipeline
 
@@ -93,16 +98,22 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started · 🧪 STUB (present bu
 
 ## Known blockers
 
-- **No local admin/sudo on this Mac.** Homebrew (and therefore Terraform,
-  Ansible, Packer, Azure CLI) cannot be installed by this account. Someone
-  with admin rights needs to either run the installer or grant this account
-  admin/sudo before `make up` can be executed locally.
-- **No Azure credentials provided yet.** Per operator instruction, `infra/`
-  is being scaffolded as code without running `az login` or `terraform
-  apply`. Live provisioning is blocked on the operator providing a
-  subscription ID/region and completing `az login` when ready.
-- **Terraform code is unvalidated.** No `terraform fmt`/`validate`/`plan`
-  has been run against `infra/azure/` — there's no local terraform binary
-  (see blocker above). Treat it as a careful first draft, not
-  proven-correct, until CI's `terraform-validate` job runs on push or it's
-  validated from a machine with terraform installed.
+- **No local admin/sudo on this Mac.** Homebrew (and therefore Packer,
+  QEMU, Ansible) cannot be installed by this account. Someone with admin
+  rights needs to either run the installer or grant this account
+  admin/sudo before `make up` can be executed locally. This blocker is
+  identical regardless of deploy target — switching from Azure to local
+  (ADR 0004) removed the cloud-credential dependency but not this one.
+- **Packer/UTM code is unvalidated.** None of `infra/local/packer/*.pkr.hcl`,
+  `Autounattend.xml`, the Kali preseed, or `generate_bundles.py`'s plist
+  key assumptions have been run against real Packer/QEMU/UTM — there's no
+  local install to test against (see blocker above). Treat all of it as a
+  careful first draft, not proven-correct. CI's `packer-validate` job
+  checks syntax only, not that a build actually succeeds.
+- **UTM VM boot is a manual step.** `make up` builds images and generates
+  `.utm` bundles but cannot start them — UTM has no verified CLI path for
+  that (see `infra/local/README.md`). The operator opens UTM and starts
+  the 4 VMs by hand before `make sync-scope` can find their IPs (which
+  also requires manually reading each guest's IP into
+  `infra/local/discovered-ips.yaml` — see that file's `.example` for why
+  this isn't automated either).

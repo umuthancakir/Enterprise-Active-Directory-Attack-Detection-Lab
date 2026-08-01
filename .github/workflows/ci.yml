@@ -6,21 +6,39 @@ on:
     branches: [main]
 
 jobs:
-  terraform-validate:
-    name: Terraform fmt & validate
+  packer-validate:
+    name: Packer fmt & validate
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: infra/azure
+        working-directory: infra/local/packer
     steps:
       - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform@v3
-      - name: terraform fmt
-        run: terraform fmt -check -recursive
-      - name: terraform init (no backend)
-        run: terraform init -backend=false
-      - name: terraform validate
-        run: terraform validate
+      - uses: hashicorp/setup-packer@v3
+      - name: packer fmt
+        run: packer fmt -check -recursive .
+      - name: packer init + validate (windows-server)
+        run: |
+          packer init windows-server.pkr.hcl
+          packer validate \
+            -var iso_url=https://example.invalid/placeholder.iso \
+            -var iso_checksum=sha256:0000000000000000000000000000000000000000000000000000000000000 \
+            -var admin_password=placeholder-for-ci-validate-only \
+            windows-server.pkr.hcl
+      - name: packer init + validate (kali-attacker)
+        run: |
+          packer init kali-attacker.pkr.hcl
+          packer validate \
+            -var iso_url=https://example.invalid/placeholder.iso \
+            -var iso_checksum=sha256:0000000000000000000000000000000000000000000000000000000000000 \
+            -var admin_ssh_public_key="ssh-ed25519 AAAAplaceholder" \
+            kali-attacker.pkr.hcl
+      - name: packer init + validate (ubuntu-siem)
+        run: |
+          packer init ubuntu-siem.pkr.hcl
+          packer validate \
+            -var base_image_checksum=sha256:0000000000000000000000000000000000000000000000000000000000000 \
+            ubuntu-siem.pkr.hcl
 
   ansible-lint:
     name: Ansible lint

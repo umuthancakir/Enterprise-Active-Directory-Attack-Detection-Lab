@@ -1,6 +1,6 @@
 # ADR 0003: Network isolation model on Azure
 
-- **Status:** accepted
+- **Status:** superseded by [ADR 0005](0005-local-network-isolation.md) (deploy target reverted to local — see [ADR 0004](0004-revert-to-local-utm.md))
 - **Date:** 2026-08-01
 
 ## Context

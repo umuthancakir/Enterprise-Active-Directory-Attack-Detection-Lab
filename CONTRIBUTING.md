@@ -22,7 +22,7 @@ outside contributions cleanly. If you're contributing:
    infra components or attack chains.
 2. Keep PRs scoped to one phase/component where possible.
 3. Run the relevant checks locally before opening a PR:
-   - `terraform fmt -check` / `terraform validate` for anything under `infra/`
+   - `packer fmt -check` / `packer validate` for anything under `infra/local/packer/`
    - `ansible-lint` for anything under `config/`
    - Sigma rule validation + `make detections-test` for anything under
      `detections/`

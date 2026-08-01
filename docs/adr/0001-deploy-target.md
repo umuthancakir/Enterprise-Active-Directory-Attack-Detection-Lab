@@ -1,6 +1,6 @@
 # ADR 0001: Deploy target is Azure
 
-- **Status:** accepted
+- **Status:** superseded by [ADR 0004](0004-revert-to-local-utm.md)
 - **Date:** 2026-08-01
 
 ## Context
