@@ -73,7 +73,8 @@ case "$VM_NAME" in
 
   siem01)
     RENDERED="$HTTP_LINUX_DIR/user-data"
-    trap 'rm -f "$RENDERED"' EXIT
+    NOCLOUD_ISO="$SCRIPT_DIR/build/siem01-cidata.iso"
+    trap 'rm -f "$RENDERED" "$NOCLOUD_ISO"' EXIT
     # cloud-init's SSH key needs literal newline-free embedding; escape any
     # '&' or '\' before sed substitution to avoid corrupting the key.
     ESCAPED_KEY="$(printf '%s' "$PUBLIC_KEY" | sed -e 's/[&\\]/\\&/g')"
@@ -82,11 +83,18 @@ case "$VM_NAME" in
 
     : "${UBUNTU_IMG_CHECKSUM:?Set UBUNTU_IMG_CHECKSUM (sha256:<hash>) — see ubuntu-siem.pkr.hcl variable description}"
 
+    # NOT Packer's own cd_files/cd_label — see generate_nocloud_iso.py's
+    # docstring and ubuntu-siem.pkr.hcl's nocloud_iso variable for why.
+    mkdir -p "$SCRIPT_DIR/build"
+    python3 "$SCRIPT_DIR/generate_nocloud_iso.py" \
+      "$RENDERED" "$HTTP_LINUX_DIR/meta-data" "$NOCLOUD_ISO"
+
     packer init "$SCRIPT_DIR/packer/ubuntu-siem.pkr.hcl"
     packer build \
       -var "base_image_checksum=${UBUNTU_IMG_CHECKSUM}" \
       -var "efi_firmware_code=${EFI_CODE}" \
       -var "efi_firmware_vars=${EFI_VARS}" \
+      -var "nocloud_iso=${NOCLOUD_ISO}" \
       "$SCRIPT_DIR/packer/ubuntu-siem.pkr.hcl"
     ;;
 

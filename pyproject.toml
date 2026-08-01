@@ -54,6 +54,12 @@ dev = [
     # CI-run test suite" pattern as sigma-cli above. See that module's
     # docstring for why it's not wired into `make detections-test`.
     "elasticsearch>=8.15,<9",
+    # pycdlib: used only by infra/local/generate_nocloud_iso.py, which
+    # infra/local/build-linux.sh's siem01 path calls instead of Packer's
+    # own (broken-on-macOS) cd_files/cd_label mechanism — see that
+    # script's docstring for the full explanation. Operator/build
+    # tooling, not exercised by any test.
+    "pycdlib>=1.14",
 ]
 
 [tool.ruff]
