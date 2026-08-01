@@ -18,13 +18,17 @@ truth for what actually works. As of this handbook:
 
   * Phase 0 (repo scaffold, governance docs, ADRs, scope guard, CI) ... DONE
   * Phase 1 (local UTM/QEMU lab: Packer templates + Ansible roles) ..... WRITTEN,
-        NOT YET BUILT OR RUN. Packer/UTM code is still unvalidated against a
-        real install (no local hypervisor to test on - Homebrew itself is
-        blocked, no sudo on this machine). The Ansible layer is a partial
-        exception: `pip install --user ansible-core ansible-lint` needs no
-        sudo, so `ansible-playbook --syntax-check` and `ansible-lint` DO run
-        and pass clean (production profile) - real static validation, just
-        not a real WinRM/SSH target yet.
+        NOT YET BUILT OR RUN. `packer fmt`/`packer init`/`packer validate` DO
+        now run for real (Packer installed via its standalone release binary,
+        no Homebrew needed - see "Installing tools without Homebrew" below)
+        and are also verified in CI on every push. What's still unvalidated
+        is an actual `packer build`: that needs QEMU itself, which (unlike
+        Packer) has no standalone binary and still needs Homebrew/a package
+        manager. The Ansible layer is a partial exception too: `pip install
+        --user ansible-core ansible-lint` needs no sudo, so `ansible-playbook
+        --syntax-check` and `ansible-lint` DO run and pass clean (production
+        profile), and are now also checked in CI - real static validation,
+        just not a real WinRM/SSH target yet.
   * Phase 3 (attack scenario engine) ................................... DONE
         in DRY-RUN mode. `make attack SCENARIO=<name>` genuinely works today:
         it resolves targets through the scope guard, prints the exact
@@ -67,12 +71,16 @@ truth for what actually works. As of this handbook:
         roles; POST /runs calls the real attack.runner.run_scenario()
         gated by the real scope guard (proven against the actual
         unprovisioned inventory/lab-scope.yaml, same as the make attack
-        CLI). Frontend (platform/frontend/) is WRITTEN, NOT VALIDATED -
-        no local Node.js install (same Homebrew-blocked story as
-        Packer/QEMU), so no npm install/tsc/eslint/browser render has
-        happened. platform/docker-compose.yml likewise written, not run
-        (no local Docker). `make platform` itself is therefore also
-        unrun - see platform/README.md.
+        CLI). Frontend (platform/frontend/) is WRITTEN, LOCALLY UNRUN
+        but CI-VERIFIED - no local Node.js install (same Homebrew-blocked
+        story as QEMU; unlike Packer, Node has no standalone-binary
+        escape hatch this session found), so no local npm install/tsc/
+        eslint/browser render has happened, but CI's frontend job
+        (npm install/lint/typecheck/test) passed on the very first real
+        Actions run - see session 3 in BUILD_LOG.md. platform/
+        docker-compose.yml likewise written, not run anywhere (no local
+        or CI Docker). `make platform` itself is therefore also unrun -
+        see platform/README.md.
   * Phase 6 (DFIR/IR: playbooks, hunting notebook, response automation) . DONE.
         ir/playbooks/ has 7 NIST SP 800-61 playbooks (Kerberoasting,
         AS-REP roasting, ACL abuse, unconstrained delegation, DCSync,
@@ -98,7 +106,14 @@ truth for what actually works. As of this handbook:
         [as of end of session 1 - see BUILD_LOG.md session 2 for what's
         changed since: misconfig 6/7 detection coverage closed (8/8) and
         the Atomic Red Team integration added, bringing the total to 91
-        passing tests (72 root + 19 backend).]
+        passing tests (72 root + 19 backend). See session 3 for the
+        repo's first real GitHub remote + two real CI runs: run 1 found
+        2 real clean-runner bugs (packer fmt drift, a missing mypy stub
+        dependency) plus 4 more found while fixing those; run 2 was
+        fully green, 6/6 jobs - the first genuine clean-environment
+        validation this project has had, including for the frontend and
+        ansible-lint jobs, neither of which had ever run anywhere
+        before.]
 
 So the install steps below describe the intended, documented procedure. Expect
 to debug the Packer/UTM/Ansible layer the first time through, and expect the
@@ -416,8 +431,17 @@ STEP 7 - TEAR DOWN when finished (stops the spend)
         -> Step 1 not done, or not on PATH. Re-run `brew install packer qemu
            ansible` with admin rights.
   * Homebrew won't install / "need sudo"
-        -> This is the known blocker: installing Homebrew needs admin rights.
-           Get an admin to run it or grant your account admin, then retry.
+        -> If this is because your shell can't answer an interactive sudo
+           password prompt (not because the account genuinely lacks admin
+           rights - check with `id`, look for `admin` in the groups list),
+           Packer specifically doesn't need Homebrew at all: download its
+           standalone binary from releases.hashicorp.com and put it on
+           PATH (see BUILD_LOG.md session 3). QEMU and Ansible's Homebrew
+           formula don't have that escape hatch, though - Ansible via
+           `pip install --user ansible-core ansible-lint` does, but QEMU
+           genuinely needs Homebrew/a package manager. If sudo is blocked
+           for a different reason, get an admin to run it or grant your
+           account admin, then retry.
   * generate_bundles.py errors on plist keys
         -> Do Step 3 (plutil) and reconcile the key names with your UTM version.
   * Windows VMs painfully slow

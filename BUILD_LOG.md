@@ -845,3 +845,110 @@ new). `ruff`/`mypy --strict` — clean, 19 source files. Manually ran
 - No live-execution mode, by design (see `attack/integrations/README.md`
   "Design") — this is a permanent boundary for this integration, not a
   temporary gap.
+
+## 2026-08-01 — Session 3: real GitHub remote, resolved history conflict, first two real CI runs
+
+**Work done:**
+
+- Confirmed `.env` was never tracked (`git log --all --full-history -- .env`
+  empty) — no history rewrite needed.
+- Added `.gitattributes` marking `*.md`, `docs/**`, `BUILD_LOG.md`,
+  `ROADMAP.md`, and `handbook.txt` as `linguist-documentation`, so GitHub's
+  language bar reflects the actual Python-heavy codebase instead of prose
+  volume.
+- Installed the GitHub CLI (`gh`) and Packer, neither previously available
+  locally, via their official standalone release binaries (not Homebrew,
+  not sudo) into `~/.local/bin`: `gh` from `github.com/cli/cli`'s GitHub
+  releases, Packer from `releases.hashicorp.com` — both URLs obtained
+  live (`curl` the releases API / an `-sIL` existence check), never
+  guessed. `~/.config` turned out to be root-owned and unwritable by this
+  account, which broke both tools' default config dirs; fixed with
+  `GH_CONFIG_DIR`/`PACKER_PLUGIN_PATH` env overrides. Along the way,
+  `id` showed this account IS in the macOS `admin` group — the real
+  constraint on `sudo`/Homebrew is the lack of an interactive TTY for a
+  password prompt in this shell environment, not a lack of underlying
+  admin privilege. `gh auth login`'s device-code flow (operator completes
+  the interactive step in a browser, not this shell) is what unblocked
+  git's HTTPS push auth.
+- Discovered `origin/main` (2 pre-existing docs-only commits) had
+  *unrelated history* to local `main` (`git merge-base` returned empty).
+  Flagged this to the operator rather than guessing; per their explicit
+  choice, pushed local work to `origin/full-build` first
+  (`git push -u origin main:full-build`). `gh pr create` then refused
+  ("no history in common"), and `gh workflow run` 404'd because
+  `workflow_dispatch` requires the workflow file to exist on the
+  *default* branch even when dispatching against a different `--ref`.
+  Flagged this second fork to the operator too; per their explicit
+  choice, merged with `git merge origin/main --allow-unrelated-histories
+  -X ours` (verified via `git diff <old-tip> HEAD --stat` returning empty
+  — full-build's content was preserved byte-for-byte) and pushed the
+  merge commit directly to `main` (`09bbcfb`), which triggered a real,
+  push-based Actions run automatically.
+- **CI run 1 (`09bbcfb`, id 30705581784): 4/6 jobs passed, 2 failed** —
+  both real bugs invisible to this session's prior local validation:
+  - `packer fmt -check` failed (exit 3) on all 3 `.pkr.hcl` templates —
+    never actually formatted before, since Packer wasn't installed
+    locally until this session. Fixed by running `packer fmt -recursive
+    -diff .` for real once Packer was available.
+  - Backend `mypy` failed: "Library stubs not installed for jose" —
+    `types-python-jose` had been installed ad-hoc on the dev machine
+    during an earlier session's troubleshooting but never added to
+    `platform/backend/pyproject.toml`'s `dev` deps, so local mypy runs
+    kept passing for the wrong reason (an untracked stub already present)
+    while a clean CI runner had nothing. Fixed by adding the dependency
+    to `pyproject.toml`.
+  - Getting Packer working locally to fix the first bug surfaced the
+    `packer-validate` CI job had never actually been exercised for real
+    either. Running its steps locally for the first time found four more
+    real, previously undetectable bugs, all fixed in the same commit
+    (`85825bf`): `windows-server.pkr.hcl` was missing the required
+    `vm_name` var in the CI validate command; it also used the
+    `windows-update` provisioner without declaring the `rgl/windows-
+    update` plugin it needs in `required_plugins`; `kali-attacker.pkr.hcl`/
+    `ubuntu-siem.pkr.hcl` `packer validate` stats an SSH key path and a
+    rendered `user-data` file that only exist after `build.sh`/
+    `build-linux.sh` generate them at real build time, so CI now creates
+    throwaway placeholders first; and the whole job had been running with
+    `working-directory: infra/local/packer`, but the templates' relative
+    paths are relative to the repo root (confirmed by reading how
+    `build.sh`/`build-linux.sh` actually invoke packer) — fixed by
+    dropping the working-directory override and using repo-root-relative
+    paths throughout.
+  - Self-caught mid-fix error, noted here because it happened twice: the
+    placeholder `sha256:0000...` checksum used for `packer validate` was
+    miscounted by hand (wrong number of zeros) on the first two attempts.
+    Fixed by generating and length-verifying it programmatically
+    (`python3 -c "print(len(s))"`) instead of trusting a visual count —
+    should have done this from the start.
+  - Rehearsed the entire `packer-validate` job's exact steps locally from
+    the repo root before pushing the fix; all passed (exit 0).
+- **CI run 2 (`85825bf`, id 30705918024): 6/6 jobs passed** — Python
+  lint/typecheck/test, Sigma rule validation, Backend lint & test,
+  Ansible lint, Frontend lint & test, Packer fmt & validate. Confirmed via
+  `gh run watch --exit-status` and `gh run view`. This is the first
+  genuine, from-scratch, clean-runner validation this project has ever
+  had — including for `platform/frontend/` and `ansible-lint`, both of
+  which had never run anywhere (local or CI) before this.
+- Updated `README.md`'s CI badge to the real GitHub Actions status badge,
+  and rewrote `ROADMAP.md`'s "Known Blockers" section to match all of the
+  above (see that file — it now distinguishes Packer, which is genuinely
+  unblocked, from QEMU, which is not, and corrects the "no admin rights"
+  framing).
+
+**Verification performed:** both CI runs observed directly via `gh run
+view`/`gh run watch`, not inferred. The `packer-validate` job's exact
+commands were also run locally (repo root, real Packer binary) before the
+second push, all exit 0.
+
+**Not done / explicitly deferred:**
+
+- QEMU itself is still not installed locally (no standalone binary
+  distribution the way Packer/gh have) — `packer build`/`make up` remain
+  untested against a real build. See ROADMAP.md.
+- The misconfig 6/7 Sigma detections and the Atomic Red Team integration
+  the operator asked to continue with after this were already completed
+  in Session 2 (see above) — nothing further was needed there this
+  session.
+- Wazuh/Splunk SIEM backends still deliberately not started, per standing
+  operator instruction to hold until Elastic is validated end-to-end
+  against a live lab.
