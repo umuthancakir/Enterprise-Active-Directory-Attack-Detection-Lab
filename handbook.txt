@@ -29,8 +29,9 @@ truth for what actually works. As of this handbook:
         in DRY-RUN mode. `make attack SCENARIO=<name>` genuinely works today:
         it resolves targets through the scope guard, prints the exact
         commands each technique would run, and emits Finding records from
-        fixtures - fully tested (attack/lib/scope_guard.py + attack/runner.py,
-        43 passing tests). `MODE=live` (real tool execution) is implemented
+        fixtures - fully tested (attack/lib/scope_guard.py + attack/runner.py;
+        see the repo-wide test count in the Phase 7 summary below).
+        `MODE=live` (real tool execution) is implemented
         but unexercised - there is no lab or installed offensive tooling to
         run it against yet.
   * Phase 2 (telemetry: Sysmon, Windows audit policy/SACLs, WEF, ......... WRITTEN,
@@ -75,6 +76,15 @@ truth for what actually works. As of this handbook:
         live-execution mode exists or is planned - see its README).
         7 passing tests. Nothing here has run against a real
         incident/cluster - no lab exists yet.
+  * Phase 7 (polish: diagrams, CI, final ROADMAP pass) .................. DONE.
+        docs/architecture.md added (telemetry data-flow, domain_dominance
+        attack-chain sequence, purple-team-loop diagrams, on top of the
+        host/platform diagram already in README.md). CI's ansible-lint
+        job now installs config/requirements.yml's collections and runs
+        ansible-playbook --syntax-check, not just lint, so CI actually
+        reproduces what was verified locally. 81 pytest tests passing
+        total (62 at the repo root, 19 in platform/backend/), ruff/mypy
+        --strict clean throughout everywhere Python tooling could run.
 
 So the install steps below describe the intended, documented procedure. Expect
 to debug the Packer/UTM/Ansible layer the first time through, and expect the

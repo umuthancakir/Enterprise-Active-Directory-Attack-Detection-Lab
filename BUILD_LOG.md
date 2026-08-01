@@ -653,3 +653,68 @@ f-string bug above). `mypy` (strict) — clean, 16 source files.
   all — this is a permanent design boundary (see its README's "Design"
   section), not a temporary gap like most other "not run yet" notes in
   this log.
+
+## 2026-08-01 — Session 1 continued: polish (Phase 7) — closing out this session
+
+**Work done:**
+
+- `docs/architecture.md`: 3 mermaid diagrams — telemetry data flow (event
+  on `dc01`/`mem01` through to a Sigma verdict), the `domain_dominance`
+  attack chain as a sequence diagram (which host each technique actually
+  connects to, per `attack/techniques.py`'s module docstring), and the
+  purple-team loop tying `attack/` → `detections/` → `ir/` → the platform
+  heatmap together. Linked from `README.md`'s Documentation section.
+- `.github/workflows/ci.yml`'s `ansible-lint` job hardened: now installs
+  `config/requirements.yml`'s collections
+  (`ansible-galaxy collection install`) and runs
+  `ansible-playbook --syntax-check` before linting — previously it only
+  ran bare `ansible-lint` without the collections a clean CI runner
+  wouldn't have, which could have behaved differently than the
+  locally-verified run this job is meant to reproduce. Caught by
+  reviewing the CI file end-to-end during this polish pass, not by a
+  failure — worth noting since it means this specific gap was silent
+  until now.
+- `ROADMAP.md`: full pass — added an "At a glance" summary near the top;
+  fixed several rows still marked 🚧 from mid-session that were actually
+  ✅ by session's end (Phase 0's `.env.example`/Makefile/ADR rows); removed
+  one stale duplicate row (Phase 3's scope-guard-enforcement line,
+  superseded by an earlier row in the same table); recounted ADRs (6, not
+  a stale number); rewrote the Phase 7 table itself now that its items are
+  actually done.
+- `CHANGELOG.md`: rewritten — was still Phase-0/Phase-1-era and hadn't
+  been touched across 13 commits of subsequent work. Now a condensed,
+  release-note-style summary of the whole session, pointing to this file
+  for the session-by-session narrative.
+- `handbook.txt`: final sync — added a Phase 7 status block, fixed a
+  stale specific test count in the Phase 3 block (referenced "43 passing
+  tests," which was accurate at the moment Phase 3 finished but stale
+  once Phase 4/6 added more; replaced with a pointer to the current
+  repo-wide count instead of a number that would go stale again the same
+  way).
+- `README.md`: status badge updated (`early_build` → `build_in_progress`
+  — more accurate given 13 commits across 7 of 8 phases); Documentation
+  section gained links to `docs/architecture.md`, `ir/playbooks/`, and
+  `handbook.txt`.
+
+**Verification performed:** Full re-run of `make lint`/`make test` at the
+repo root (62/62 passing, `ruff`/`mypy --strict`/`ansible-lint` all clean)
+and in `platform/backend/` (19/19 passing, `ruff`/`mypy --strict` clean) —
+confirming nothing in this documentation-focused pass broke anything.
+`.github/workflows/ci.yml` YAML-syntax-checked after the `ansible-lint`
+job edit.
+
+**Not done / explicitly deferred:**
+
+- No docs site (mkdocs/Sphinx/etc.) — judged unnecessary at this repo's
+  current size; Markdown-as-browsed-on-GitHub was deemed sufficient rather
+  than left as an oversight.
+- The CI hardening above (`ansible-lint` job) has not itself been run on
+  a real GitHub Actions runner — this repo has no remote configured yet
+  (`git remote -v` returns nothing), so no CI has ever actually executed
+  for real. Everything described as "CI does X" in this project is
+  therefore a claim about what the workflow file *would* do, verified by
+  local reproduction of the same commands, not by an observed CI run.
+  This is the one honesty caveat that applies to literally every CI job
+  described as passing throughout this entire build log, worth stating
+  explicitly here at the end rather than only implicitly through "no
+  remote" mentions scattered earlier.

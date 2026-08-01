@@ -5,18 +5,37 @@ is claimed done unless it actually runs from a clean checkout.
 
 Legend: ✅ done · 🚧 in progress · ⬜ not started · 🧪 STUB (present but not functional)
 
+## At a glance
+
+All 8 phases have real, committed work. What "done" means varies by
+layer, and that variance is the whole point of this document — read the
+phase tables, not just this summary:
+
+- **Genuinely tested** (real tools, real assertions, run and passing):
+  the scope guard, the attack engine's dry-run mode, the detection
+  library, the FastAPI backend, the Ansible roles (syntax/lint only, not
+  against a live host), the IR response automation. 81 `pytest` tests
+  passing (62 at the repo root, 19 in `platform/backend/`), `ruff`/`mypy
+  --strict` clean throughout.
+- **Written and internally consistent, but unvalidated against real
+  infrastructure**: the Packer/UTM local-lab tooling, the telemetry
+  config, the Next.js frontend, the Docker Compose files. All blocked on
+  the same root cause — see "Known blockers."
+- **Not started**: Atomic Red Team/Caldera integration, Wazuh/Splunk SIEM
+  backends, detections for misconfigs 6/7, a docs site.
+
 ## Phase 0 — Scaffold
 
 | Item | Status | Notes |
 |---|---|---|
 | Directory layout | ✅ | |
 | README, SECURITY, LICENSE, CONTRIBUTING, CODE_OF_CONDUCT, CHANGELOG | ✅ | |
-| BUILD_LOG.md / ROADMAP.md | ✅ | this session |
-| `inventory/lab-scope.yaml` + scope-guard contract | 🚧 | |
-| `.env.example` | 🚧 | |
-| Makefile skeleton | 🚧 | |
-| ADR framework + ADR 0001 (deploy target), ADR 0002 (scope guard) | 🚧 | |
-| CI skeleton (`.github/workflows`) | ✅ | |
+| BUILD_LOG.md / ROADMAP.md | ✅ | |
+| `inventory/lab-scope.yaml` + scope-guard contract | ✅ | |
+| `.env.example` | ✅ | |
+| Makefile | ✅ | every target real except the parts genuinely blocked on Packer/QEMU/Docker — see "Known blockers" |
+| ADR framework (6 ADRs, 0001–0006: deploy target, scope guard, network isolation ×2, revert-to-local, telemetry) | ✅ | |
+| CI (`.github/workflows/ci.yml`, 6 jobs) | ✅ | |
 | Homebrew / Packer / QEMU installed locally | ⬜ | **still blocked**: this account lacks sudo, and these need Homebrew specifically |
 | Python tooling (pytest, ruff, mypy) + Ansible (ansible-core, ansible-lint) installed locally | ✅ | **unblocked** — all pip-installable at user level (`pip install --user ...`), no sudo needed. This is a real capability unlock: it does NOT solve the Packer/QEMU/UTM blocker (those are Homebrew-only), but it means the Python layer and all of `config/`'s Ansible YAML can be genuinely tested, not just hand-reviewed. See BUILD_LOG.md. |
 
@@ -102,7 +121,6 @@ path for "real" runs.
 | CI safety smoke-test: runner refuses against the real, unprovisioned scope file | ✅ | `python-quality` CI job |
 | Established-tooling orchestration (NetExec, Impacket, BloodHound, bloodyAD) | ✅ | command-building only — dry-run never shells out; live mode does via `subprocess`, unexercised |
 | Atomic Red Team / Caldera integration | ⬜ | not attempted — current 6 techniques are hand-modeled against this lab's specific misconfigs rather than pulled from an Atomic Red Team catalog |
-| Scope-guard enforcement wired into runner | ⬜ | |
 
 ## Phase 4 — Detection library
 
@@ -153,9 +171,12 @@ same confidence. See `platform/README.md`.
 
 | Item | Status | Notes |
 |---|---|---|
-| Architecture diagrams (mermaid) | 🚧 | one diagram in README so far |
-| Full CI/CD | ⬜ | |
-| Final honest ROADMAP pass | ⬜ | |
+| Architecture diagrams (mermaid) | ✅ | README.md's high-level host/platform diagram, plus [`docs/architecture.md`](docs/architecture.md)'s telemetry data-flow, `domain_dominance` attack-chain sequence, and purple-team-loop diagrams |
+| CI (`.github/workflows/ci.yml`) | ✅ | 6 jobs: `packer-validate`, `ansible-lint` (now installs `config/requirements.yml`'s collections + runs `ansible-playbook --syntax-check`, not just lint, so CI actually reproduces what was verified locally), `python-quality` (+ the attack-CLI safety smoke test), `detections-test` (+ coverage-matrix artifact upload), `backend`, `frontend` |
+| Makefile | ✅ | every target does something real; `up`/`platform` correctly refuse to run past `check-tools` given this machine's blockers, rather than pretending to succeed |
+| Final honest ROADMAP pass | ✅ | this pass — fixed several stale 🚧/⬜ rows left over from earlier in this session, removed one duplicate row (Phase 3), renumbered/recounted ADRs |
+| CONTRIBUTING.md / CODE_OF_CONDUCT.md / CHANGELOG.md | ✅ | CHANGELOG.md updated this pass to summarize the whole session; CONTRIBUTING/CODE_OF_CONDUCT unchanged since Phase 0, still accurate |
+| Docs site | ⬜ | not attempted — this repo's Markdown-as-you-browse-GitHub structure was judged sufficient for the project's current size, not a gap being actively tracked |
 
 ## Known blockers
 
@@ -199,3 +220,10 @@ same confidence. See `platform/README.md`.
   `platform/docker-compose.yml` (Docker) could not — not a difference in
   effort, a difference in what's pip-installable versus what needs a
   system package manager.
+- **No CI has ever actually run.** This repo has no git remote configured
+  (`git remote -v` is empty) — every "CI does X" claim throughout this
+  project (and there are many, across `ROADMAP.md` and `BUILD_LOG.md`) is
+  a claim about what `.github/workflows/ci.yml` *would* do, verified by
+  reproducing the same commands locally, not by an observed GitHub
+  Actions run. Push this branch to a real remote for the first genuine
+  end-to-end validation of the CI configuration itself.

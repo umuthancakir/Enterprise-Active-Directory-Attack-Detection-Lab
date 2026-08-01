@@ -2,7 +2,7 @@
 
 [![CI](https://img.shields.io/badge/CI-not_yet_running-lightgrey)](/.github/workflows)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/status-early_build-orange)](ROADMAP.md)
+[![Status](https://img.shields.io/badge/status-build_in_progress-orange)](ROADMAP.md)
 
 A fully isolated, reproducible, **purple-team** laboratory plus a platform
 layer that provisions a vulnerable Active Directory environment, orchestrates
@@ -150,8 +150,12 @@ make down                     # full teardown
 
 - [SECURITY.md](SECURITY.md) — safety invariants and how to report platform issues
 - [docs/vulnerabilities.md](docs/vulnerabilities.md) — every deliberate lab
-  misconfiguration, mapped to the ATT&CK technique it enables
+  misconfiguration, mapped to the ATT&CK technique and Sigma detection that cover it
+- [docs/architecture.md](docs/architecture.md) — telemetry data flow, the
+  `domain_dominance` attack chain, and the purple-team detection loop, as diagrams
 - [docs/adr/](docs/adr/) — architecture decision records
+- [ir/playbooks/](ir/playbooks/) — NIST SP 800-61 incident response playbooks
+- [handbook.txt](handbook.txt) — plain-text install/usage handbook (kept in sync with actual behavior)
 - [ROADMAP.md](ROADMAP.md) — honest done/in-progress/not-started status
 - [BUILD_LOG.md](BUILD_LOG.md) — session-by-session build history
 

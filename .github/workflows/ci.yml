@@ -48,15 +48,20 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install ansible-lint
-        run: pip install ansible-lint
-      - name: Lint config/
-        run: |
-          if [ -n "$(find config -name '*.yml' -o -name '*.yaml' 2>/dev/null)" ]; then
-            ansible-lint config/
-          else
-            echo "No Ansible content yet — skipping (see ROADMAP.md)."
-          fi
+      - name: Install ansible-core + ansible-lint
+        run: pip install ansible-core ansible-lint
+      - name: Install collections referenced by config/requirements.yml
+        # ansible.windows/microsoft.ad/etc. — without these,
+        # ansible-lint's module resolution for the FQCN modules used
+        # throughout config/dc and config/member may behave differently
+        # than the locally-verified run this job is meant to reproduce
+        # (see BUILD_LOG.md — this bit us locally via a stale PATH/cert
+        # issue, not wanting the CI equivalent to go unnoticed).
+        run: ansible-galaxy collection install -r config/requirements.yml
+      - name: ansible-playbook --syntax-check
+        run: ansible-playbook -i config/inventory/lab_scope_inventory.py --syntax-check config/site.yml
+      - name: ansible-lint config/
+        run: ansible-lint config/
 
   python-quality:
     name: Python lint, typecheck, test (attack/, detections/, scripts/, config/inventory/)
