@@ -32,9 +32,16 @@ variable "admin_username" {
   default = "labadmin"
 }
 
-variable "firmware" {
-  type    = string
-  default = "/opt/homebrew/share/qemu/edk2-aarch64-code.fd"
+variable "efi_firmware_code" {
+  type        = string
+  default     = "/opt/homebrew/share/qemu/edk2-aarch64-code.fd"
+  description = "UEFI CODE firmware for qemu-system-aarch64. infra/local/build-linux.sh derives and overrides this from wherever qemu-system-aarch64 actually resolves on PATH — see kali-attacker.pkr.hcl's efi_firmware_code variable for the full explanation of why this uses Packer's efi_boot mechanism rather than the legacy firmware/-bios field. The Homebrew-specific default here is only a fallback for direct `packer build` invocations."
+}
+
+variable "efi_firmware_vars" {
+  type        = string
+  default     = "/opt/homebrew/share/qemu/edk2-arm-vars.fd"
+  description = "UEFI VARS template pairing efi_firmware_code — edk2-arm-vars.fd, shared across 32-bit ARM and aarch64 (QEMU does not ship a separate edk2-aarch64-vars.fd)."
 }
 
 variable "output_directory" {
@@ -54,11 +61,12 @@ source "qemu" "ubuntu_siem" {
   vm_name          = "siem01.qcow2"
   format           = "qcow2"
 
-  qemu_binary  = "qemu-system-aarch64"
-  accelerator  = "hvf"
-  machine_type = "virt"
-  firmware     = var.firmware
-  cpu_model    = "host"
+  qemu_binary       = "qemu-system-aarch64"
+  accelerator       = "hvf"
+  machine_type      = "virt"
+  efi_firmware_code = var.efi_firmware_code
+  efi_firmware_vars = var.efi_firmware_vars
+  cpu_model         = "host"
 
   cpus      = 2
   memory    = 4096

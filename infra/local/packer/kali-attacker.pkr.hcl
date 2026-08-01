@@ -39,10 +39,16 @@ variable "admin_ssh_public_key" {
   description = "SSH public key installed for admin_username (private key is Terraform-style generated in infra/local/generate_bundles.py output — see that script)."
 }
 
-variable "firmware" {
+variable "efi_firmware_code" {
   type        = string
   default     = "/opt/homebrew/share/qemu/edk2-aarch64-code.fd"
-  description = "UEFI firmware for qemu-system-aarch64 (installed alongside qemu via Homebrew). ARM64 has no legacy BIOS boot path."
+  description = "UEFI CODE firmware for qemu-system-aarch64 (installed alongside qemu, at <qemu prefix>/share/qemu/edk2-aarch64-code.fd — /opt/homebrew for a Homebrew install). infra/local/build-linux.sh derives and overrides this from wherever qemu-system-aarch64 actually resolves on PATH. Uses Packer's efi_boot mechanism (-drive if=pflash), not the legacy `firmware` field (-bios) — the latter forces Packer to inject `-boot once=d`, which QEMU's aarch64 virt machine genuinely does not support ('no function defined to set boot device list for this architecture', see BUILD_LOG.md session 4). ARM64 has no legacy BIOS boot path."
+}
+
+variable "efi_firmware_vars" {
+  type        = string
+  default     = "/opt/homebrew/share/qemu/edk2-arm-vars.fd"
+  description = "UEFI VARS template pairing efi_firmware_code — note this is edk2-arm-vars.fd (not edk2-aarch64-vars.fd, which QEMU does not ship; the ARM vars template is shared across 32-bit ARM and aarch64)."
 }
 
 variable "output_directory" {
@@ -57,11 +63,12 @@ source "qemu" "kali_attacker" {
   vm_name          = "attacker01.qcow2"
   format           = "qcow2"
 
-  qemu_binary  = "qemu-system-aarch64"
-  accelerator  = "hvf" # native arm64 guest on Apple Silicon host
-  machine_type = "virt"
-  firmware     = var.firmware
-  cpu_model    = "host"
+  qemu_binary       = "qemu-system-aarch64"
+  accelerator       = "hvf" # native arm64 guest on Apple Silicon host
+  machine_type      = "virt"
+  efi_firmware_code = var.efi_firmware_code
+  efi_firmware_vars = var.efi_firmware_vars
+  cpu_model         = "host"
 
   cpus      = 2
   memory    = 4096
@@ -72,16 +79,41 @@ source "qemu" "kali_attacker" {
 
   headless = true
 
-  http_directory = "${path.root}/http-linux"
-
-  boot_command = [
-    "<esc><wait>",
-    "install auto=true priority=critical ",
-    "url=http://{{ .HTTPIP }}:{{ .HTTPPort }}/preseed.cfg ",
-    "hostname=attacker01 domain=eadadl.lab ",
-    "<enter>"
+  # QEMU's aarch64 "virt" machine has NO default GPU or input controller
+  # (unlike "pc", which wires up a VGA-compatible display and a PS/2
+  # keyboard automatically) — without these, VNC has no guest framebuffer
+  # to show and no guest input device to deliver keystrokes to, so
+  # boot_command's keypresses go nowhere (observed: they got swallowed by
+  # QEMU's own monitor instead — see BUILD_LOG.md session 4). virtio-gpu
+  # gives VNC something to render; the USB keyboard/tablet (behind an XHCI
+  # controller, since "virt" has no built-in USB host controller either)
+  # gives it something to type into.
+  qemuargs = [
+    ["-device", "virtio-gpu-pci"],
+    ["-device", "qemu-xhci"],
+    ["-device", "usb-kbd"],
+    ["-device", "usb-tablet"],
   ]
-  boot_wait = "5s"
+
+  # Kali's arm64 netinst boots via GRUB (not an ISOLINUX-style "boot:"
+  # prompt — aarch64 has no legacy BIOS boot path, see the efi_firmware_code
+  # variable above), so the installer boot params can't be typed directly
+  # at a prompt. Instead: 'e' opens GRUB's edit view on the highlighted
+  # "Install" entry, <down><down> moves from the "setparams" line to the
+  # "linux ..." line, <end> reaches the end of that (visually wrapped but
+  # logically single) line, then the params are appended directly to the
+  # kernel command line and <f10> boots the edited entry (equivalent to
+  # Ctrl-x — both are shown on GRUB's own edit-mode help text). Verified
+  # interactively via VNC screenshots against this exact ISO before being
+  # encoded here — see BUILD_LOG.md session 4.
+  boot_command = [
+    "<wait10>",
+    "e",
+    "<down><down><end>",
+    " auto=true priority=critical url=http://{{ .HTTPIP }}:{{ .HTTPPort }}/preseed.cfg hostname=attacker01 domain=eadadl.lab",
+    "<f10>"
+  ]
+  boot_wait = "10s"
 
   communicator = "ssh"
   ssh_username = var.admin_username

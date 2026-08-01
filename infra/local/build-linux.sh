@@ -27,6 +27,29 @@ if [ ! -f "$KEY_PATH" ]; then
 fi
 PUBLIC_KEY="$(cat "${KEY_PATH}.pub")"
 
+# Both .pkr.hcl files' efi_firmware_code/efi_firmware_vars variables
+# default to a hardcoded /opt/homebrew/... path, since that's where
+# Homebrew installs QEMU's UEFI firmware alongside the qemu-system-*
+# binaries. That default breaks for any non-Homebrew QEMU install (e.g. a
+# from-source build in a custom prefix — see BUILD_LOG.md session 4).
+# Derive both instead from wherever qemu-system-aarch64 actually resolves
+# on PATH, which generalizes to both.
+QEMU_BIN="$(command -v qemu-system-aarch64)" || {
+  echo "qemu-system-aarch64 not found on PATH" >&2
+  exit 1
+}
+QEMU_PREFIX="$(cd "$(dirname "$QEMU_BIN")/.." && pwd)"
+EFI_CODE="$QEMU_PREFIX/share/qemu/edk2-aarch64-code.fd"
+EFI_VARS="$QEMU_PREFIX/share/qemu/edk2-arm-vars.fd"
+[ -f "$EFI_CODE" ] || {
+  echo "Expected UEFI CODE firmware at $EFI_CODE (derived from qemu-system-aarch64's location) but it's not there." >&2
+  exit 1
+}
+[ -f "$EFI_VARS" ] || {
+  echo "Expected UEFI VARS template at $EFI_VARS (derived from qemu-system-aarch64's location) but it's not there." >&2
+  exit 1
+}
+
 case "$VM_NAME" in
   attacker01)
     # kali-attacker.pkr.hcl's preseed.cfg late_command fetches
@@ -43,6 +66,8 @@ case "$VM_NAME" in
       -var "iso_url=${KALI_ISO_URL}" \
       -var "iso_checksum=${KALI_ISO_CHECKSUM}" \
       -var "admin_ssh_public_key=${PUBLIC_KEY}" \
+      -var "efi_firmware_code=${EFI_CODE}" \
+      -var "efi_firmware_vars=${EFI_VARS}" \
       "$SCRIPT_DIR/packer/kali-attacker.pkr.hcl"
     ;;
 
@@ -60,6 +85,8 @@ case "$VM_NAME" in
     packer init "$SCRIPT_DIR/packer/ubuntu-siem.pkr.hcl"
     packer build \
       -var "base_image_checksum=${UBUNTU_IMG_CHECKSUM}" \
+      -var "efi_firmware_code=${EFI_CODE}" \
+      -var "efi_firmware_vars=${EFI_VARS}" \
       "$SCRIPT_DIR/packer/ubuntu-siem.pkr.hcl"
     ;;
 
