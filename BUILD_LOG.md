@@ -1372,3 +1372,179 @@ individually with `--strict`, since `infra/local/` isn't in the main
 `pyproject.toml` mypy `files` list, matching the existing convention for
 `generate_bundles.py`). Every fix in this entry was verified against a
 real rebuild, not assumed from reading the diff.
+
+## 2026-08-02 — Session 4 continued: platform layer run for real (Docker via colima), dc01's actual WinRM root cause found and fixed, 2 real CI regressions caught and fixed
+
+Continuation of the same session. Picked up mid-way through rehearsing
+a new CI job locally; finished that, then chased down why `dc01` was
+still stuck after the AutoLogon + `iso_builder.py` fixes logged above,
+found and fixed a real, independent third bug, and along the way found
+and fixed two genuine regressions in `.github/workflows/ci.yml` on its
+first real push.
+
+**The platform layer ran for the first time all session — via colima,
+not Docker Desktop.** `platform/docker-compose.yml` had been "written,
+not run" since session 1; this machine has no admin rights for Docker
+Desktop's installer either (same interactive-TTY story as Homebrew).
+`colima` (standalone binary) + `lima` + the `docker` CLI + `docker
+compose` plugin — all downloaded straight to `~/.local/bin` /
+`~/.docker/cli-plugins`, no sudo — gave a real, working Docker runtime
+via Apple's native Virtualization.framework (`vz`), completely separate
+from the QEMU path used for the lab hosts. `docker run hello-world`
+worked immediately.
+
+**Found a real container-vs-host path bug that pytest could never have
+caught.** `platform/backend/app/config.py` derives
+`LAB_SCOPE_FILE`/`COVERAGE_MATRIX_FILE` defaults via
+`Path(__file__).resolve().parents[3]` — 3 levels up from
+`platform/backend/app/config.py` lands on the repo root *on the host*,
+which is exactly where `pytest` runs, so the backend's own test suite
+never had a reason to notice this was fragile. Inside the built image,
+that same file lives at `/app/backend/app/config.py`, and 3 levels up
+from there is `/`. A real `POST /runs` against a real running container
+returned a `ScopeFileError: scope file not found: /inventory/lab-scope.yaml`.
+Chrome's devtools reported this as a CORS failure (a backend 500 drops
+the connection before CORS headers are sent, and Chrome's console
+doesn't distinguish that from an actual CORS misconfiguration) —
+checked real preflight/actual-response headers via `curl` first
+(genuinely correct), then went to `docker logs platform-backend-1` for
+the real error. Fixed by setting `LAB_SCOPE_FILE`/`COVERAGE_MATRIX_FILE`
+explicitly in `docker-compose.yml` to match the real mount paths,
+deliberately not by trying to make the path arithmetic work for both
+layouts.
+
+**Verified end-to-end with real browser automation.** Playwright
+(pip-installed, `playwright install chromium` — its own downloaded
+Chromium, no Homebrew) drove a real login, a real `POST /runs` (denied
+403 by the scope guard, correctly — no host provisioned on this
+branch), and a real coverage page showing the actual 8/8 ATT&CK
+coverage matrix. Screenshots captured for real into `docs/screenshots/`
+(`platform-login-page.png`, `platform-dashboard-run.png`,
+`platform-coverage-heatmap.png`), alongside a real `siem01` first-boot
+serial console render (`siem01-first-boot-console.png`, via `pyte` +
+Pillow reading the raw serial capture).
+
+**A real credential-leak incident happened and was structurally fixed
+(see also the entry above for the original discovery) — worth
+restating precisely once more: never rewrote git history.** A real
+`ADMIN_PASSWORD` ended up committed and pushed to `origin` in
+`becc301`, because `build.sh`'s old approach (render the tracked
+`Autounattend.xml` in place, restore via a bash `EXIT` trap) doesn't
+run its trap if the underlying `qemu`/`packer` process is killed
+directly rather than letting the script exit normally — exactly what
+happened while debugging a stuck build. Restored the placeholder,
+rotated the password, and rewrote `build.sh` to render into a gitignored
+path (`infra/local/build/http-windows-rendered/`) instead, so there's
+no tracked file left in a bad state no matter how the build is
+interrupted — a structural fix, not a cleanup. Did **not** rewrite
+`origin`'s history (`git push --force`) — that needs the operator's
+explicit authorization, flagged rather than assumed.
+
+**Added a new CI job (`platform-compose`) specifically to catch a
+recurrence of the container-path bug automatically** — builds the real
+compose stack on the GitHub-hosted runner's native Docker, then runs
+the same login → 403 → coverage sequence Playwright validated locally.
+Rehearsed locally first with CI-matching throwaway env vars before
+pushing.
+
+**That first real push of `platform-compose` went red — for two
+genuine reasons, not flakiness:**
+
+1. `packer init + validate (windows-server)` failed with `Unset
+   variable "rendered_autounattend"` / `"seed_iso"`. Earlier this
+   session `windows-server.pkr.hcl` switched from Packer's own (buggy)
+   `cd_files` mechanism to these two required variables (see the
+   `iso_builder.py` entry above), but the CI validate step was never
+   updated to pass them — a straight regression, self-caused, sitting
+   undetected because this was the first real push since that change.
+   `ubuntu-siem.pkr.hcl`'s equivalent `nocloud_iso` variable has the
+   same no-default shape and would have hit the identical error, just
+   never got the chance to — `windows-server`'s step runs first in the
+   job and a failure there aborts the rest. Fixed by passing placeholder
+   *strings* (not real files — these are plain string interpolations
+   into `qemuargs`, not read via an HCL `file()`/exists() check) for
+   both. Verified locally: both `packer validate` invocations exit 0
+   (confirmed `ubuntu-siem`'s "output directory already exists" error
+   during local verification was purely this machine's own real siem01
+   build already occupying that path — irrelevant on a clean CI
+   checkout, confirmed by pointing `output_directory` elsewhere and
+   getting a clean pass).
+2. `Backend health check` got `curl` exit 56 (connection reset), then
+   `Show logs on failure`/`Tear down` *also* failed, with
+   `BACKEND_SECRET_KEY must be set`. Two independent bugs stacked:
+   - `backend`/`frontend` had no `healthcheck:` block in
+     `docker-compose.yml`, so `docker compose up --wait` considered them
+     "healthy" the instant the container process *started*, not once
+     the app inside was actually serving — a race a fast GitHub-hosted
+     runner hits far more reliably than this machine's own, slower local
+     runs did. Fixed with real healthchecks using each image's own
+     interpreter (`python3`/`node` — neither image ships `curl`) against
+     the real endpoints.
+   - The job's env vars (`POSTGRES_PASSWORD` etc.) were scoped to the
+     single "Build and start the stack" *step*. `docker-compose.yml`'s
+     `${VAR:?...}` interpolation re-runs on every `docker compose`
+     invocation (`logs`, `down` — not just `up`), so every step in the
+     job that shells out to it needs the same env, not just the first
+     one. Moved to job-level `env:`. (Hit the exact same class of bug
+     rehearsing this locally minutes earlier — a fresh `Bash` call
+     doesn't inherit a previous call's `source .env`/`export`, so
+     `docker compose down -v` failed the same way until the env was
+     re-sourced in the same call.)
+   Verified locally before pushing: rebuilt with CI-matching throwaway
+   env vars, `--wait` now reports real `Healthy` (not just `Started`)
+   for backend and frontend, full login → 403 scope-guard-refusal →
+   coverage regression check passed again end-to-end.
+
+Pushed both fixes together. **Real result: all 7 CI jobs green** on
+commit `e54e17a` (Packer fmt & validate, Ansible lint,
+python-quality, detections-test, backend, platform-compose, frontend).
+
+**dc01's actual WinRM root cause, found via live VNC on the still-alive
+`build4` VM rather than guessing and rebuilding blind.** `build4` (the
+AutoLogon + `iso_builder.py` fix from the entry above) had been running
+over 2 hours with `vncdo` intermittently refusing to connect — checked
+`lsof -a -p <pid> -i`: the process was genuinely still alive, WinRM's
+forwarded port genuinely `LISTEN`ing, plus a real `ESTABLISHED`
+outbound connection (Windows Update, most likely) — not a hung/crashed
+VM, a slow one. Once VNC cooperated: **a real, fully booted Windows
+Server desktop**, Server Manager open, AutoLogon had worked. Probing
+the forwarded WinRM port directly (`curl -X POST .../wsman` with a
+body, reading `WWW-Authenticate`) showed `Negotiate` only — Basic auth
+never got enabled, the same *symptom* as the pre-`iso_builder.py` bug,
+but this time the cause was different: `bootstrap.ps1` was written and
+being launched by `FirstLogonCommands` under the `Administrator`
+account, but `windows-server.pkr.hcl`'s `communicator` block has
+*always* authenticated as `winrm_username = "labadmin"` — the same
+`lab_admin_username` convention `siem01`/`attacker01` use via
+cloud-init/preseed (`config/group_vars/all.yml`). Nothing in
+`Autounattend.xml` had ever created a `labadmin` account — Packer's
+WinRM communicator was polling with credentials for a user that simply
+didn't exist, and would have failed even if `bootstrap.ps1` had
+succeeded perfectly. Confirmed by driving the live desktop directly
+over VNC (`vncdo`, working around a real, reproducible colon-key
+mis-translation bug in this environment — `:` intermittently typed as
+`;` — by using `key shift-scolon`/avoiding commands that need a literal
+colon) to open a real `cmd.exe` and run `fsutil fsinfo drives`, `dir`,
+etc.
+
+Fixed by adding a `labadmin` `LocalAccount` (Administrators group) to
+`Autounattend.xml` and switching `AutoLogon` to run as `labadmin`
+instead of `Administrator`, so `bootstrap.ps1` runs as the same account
+the WinRM communicator authenticates as. This is the "one fix, one
+rebuild" the operator's instructions call for on top of the AutoLogon
+fix already used in `build4` — cancelled the stuck `build4` process
+(`kill -TERM`; its own background monitor confirmed a clean Packer
+cancellation, "Build was cancelled" after 2h14m, not a crash) and
+launched `build5` with the real fix. **Still running as of this entry**
+— TCG (software) x86_64 emulation on Apple Silicon is genuinely this
+slow; see ROADMAP.md for the outcome once known.
+
+**Verification performed this entry:** real GitHub Actions run
+(`e54e17a`, all 7 jobs green, checked via the GitHub API using the
+credential `git`'s own `osxkeychain` helper already had stored — not a
+new token) — first fully green run this project has had since the
+`platform-compose` job was added. `packer validate` re-run locally for
+both fixed templates. Full docker-compose regression sequence (health,
+frontend, login, 403, coverage) re-run locally against a stack rebuilt
+with the exact CI env vars, twice (once before, once after the
+healthcheck fix, to see the actual race reproduce and then disappear).

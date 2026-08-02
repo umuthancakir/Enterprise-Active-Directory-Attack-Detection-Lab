@@ -7,44 +7,50 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started · 🧪 STUB (present bu
 
 ## At a glance
 
-**Session 4 update: QEMU is genuinely installed (source build, no
-Homebrew — see "Known blockers"), and the local lab is no longer purely
-theoretical.** `siem01` (Ubuntu, native arm64) is **built, booted, and
-SSH-reachable for real** — the first host this project has ever actually
-run. `telemetry/elastic/docker-compose.yml` is deployed on it for real
-(Docker installed fresh via `apt`, a normal guest-side operation) and all
-8 Sigma detections are verified against that real, running,
-security-enabled Elasticsearch cluster, not a mock. `dc01` (Windows
-Server) got much further than ever before — a real, complete Windows
-install, `AutoLogon` working, a genuine desktop reached — with a real,
-diagnosed WinRM fix applied (see below); as of this entry a rebuild with
-that fix is still running. `attacker01` (Kali) remains blocked on an
-unresolved Debian-installer locale prompt. See BUILD_LOG.md session 4
-for the full account — five real, independent bugs found and fixed
-getting `siem01` this far, all invisible to any validation short of an
-actual build.
+**Session 4 continued: the platform layer runs for real (Docker via
+colima, not Homebrew), CI is genuinely green (7 jobs, including a new
+one that catches container-vs-host bugs), and `dc01`'s real WinRM root
+cause is found and fixed — a rebuild with it is in progress.** `siem01`
+(Ubuntu, native arm64) remains **built, booted, and SSH-reachable for
+real**. `dc01` (Windows Server) reached a genuine, fully booted desktop
+for the first time this session (`AutoLogon` working, confirmed via live
+VNC) — WinRM stayed `Negotiate`-only because `windows-server.pkr.hcl`
+has always authenticated as a `labadmin` account `Autounattend.xml`
+never actually created; fixed, and a rebuild with the real fix (`build5`)
+is running as of this entry. `attacker01` (Kali) remains blocked on an
+unresolved Debian-installer locale prompt. `platform/docker-compose.yml`
+(FastAPI + Postgres + Next.js) ran for the first time all session —
+Docker via `colima`/Apple's Virtualization.framework (no Homebrew, no
+admin TTY needed) unblocked the entire platform layer, surfaced and fixed
+a real container-vs-host path bug in the backend, and was verified
+end-to-end with real Playwright browser automation (login, a real 403
+scope-guard refusal, the real 8/8 coverage heatmap). See BUILD_LOG.md
+session 4 for the full account.
 
 All 8 phases have real, committed work. What "done" means varies by
 layer, and that variance is the whole point of this document — read the
 phase tables, not just this summary:
 
-- **Genuinely tested against a live target** (new this session): `siem01`
-  build + boot + provisioning (Packer, real QEMU), the real
+- **Genuinely tested against a live target**: `siem01` build + boot +
+  provisioning (Packer, real QEMU), the real
   `telemetry/elastic/docker-compose.yml` deployment and its 8/8 Sigma
-  detections against a real Elasticsearch cluster.
+  detections against a real Elasticsearch cluster, and — new this
+  entry — the full platform stack (`docker compose up` via colima, real
+  login/403/coverage verified via Playwright and matched by a dedicated
+  CI job that builds and hits the same stack on every push).
 - **Genuinely tested** (real tools, real assertions, run and passing):
   the scope guard, the attack engine's dry-run mode (including the
   Atomic Red Team schema integration), the detection library (8/8
-  coverage, both the abstract matcher and — new — real Elasticsearch
-  Lucene queries), the FastAPI backend, the Ansible roles (syntax/lint
-  only, not yet against a live host — `dc01`/`mem01` aren't reachable
-  yet), the IR response automation. 79 `pytest` tests passing at the
-  repo root (up from 72), `ruff`/`mypy --strict` clean throughout.
+  coverage, both the abstract matcher and real Elasticsearch Lucene
+  queries), the FastAPI backend, the Next.js frontend (via Playwright +
+  a live container, not just lint/typecheck), the Ansible roles
+  (syntax/lint only, not yet against a live host — `dc01`/`mem01` aren't
+  WinRM-reachable yet), the IR response automation. 79 `pytest` tests
+  passing at the repo root, `ruff`/`mypy --strict` clean throughout, and
+  **all 7 CI jobs green on a real push** (`e54e17a`).
 - **Written and internally consistent, but unvalidated against real
-  infrastructure**: `dc01`/`mem01` (Windows, in progress — see above),
-  `attacker01` (blocked), the Next.js frontend, the platform Docker
-  Compose file (still blocked on Docker on the *host*, distinct from
-  Docker on the *guest*, which now works fine — see "Known blockers").
+  infrastructure**: `dc01`/`mem01` (Windows, rebuild in progress — see
+  above), `attacker01` (blocked).
 - **Not started**: Caldera integration, Wazuh/Splunk SIEM backends
   (the latter deliberately deferred until Elastic is validated end-to-end
   against a live lab — Elastic itself now is, see above), a docs site.
@@ -60,7 +66,7 @@ phase tables, not just this summary:
 | `.env.example` | ✅ | |
 | Makefile | ✅ | every target real except the parts genuinely blocked on Packer/QEMU/Docker — see "Known blockers" |
 | ADR framework (6 ADRs, 0001–0006: deploy target, scope guard, network isolation ×2, revert-to-local, telemetry) | ✅ | |
-| CI (`.github/workflows/ci.yml`, 6 jobs) | ✅ | |
+| CI (`.github/workflows/ci.yml`, 7 jobs) | ✅ | added `platform-compose` (session 4 continued) — builds/starts the real docker-compose stack and hits it, specifically to catch container-vs-host bugs the other jobs can't see |
 | Homebrew / Packer / QEMU installed locally | ⬜ | **still blocked**: this account lacks sudo, and these need Homebrew specifically |
 | Python tooling (pytest, ruff, mypy) + Ansible (ansible-core, ansible-lint) installed locally | ✅ | **unblocked** — all pip-installable at user level (`pip install --user ...`), no sudo needed. This is a real capability unlock: it does NOT solve the Packer/QEMU/UTM blocker (those are Homebrew-only), but it means the Python layer and all of `config/`'s Ansible YAML can be genuinely tested, not just hand-reviewed. See BUILD_LOG.md. |
 
@@ -74,8 +80,8 @@ ADR 0004.
 
 | Item | Status | Notes |
 |---|---|---|
-| Packer: Windows Server 2022 template (dc01/mem01, x86_64 TCG-emulated) | 🚧 | **build-tested for real** (session 4) — a full install completed, `AutoLogon` worked, a genuine desktop was reached; WinRM never came up because `D:\bootstrap.ps1` never ran (a real, diagnosed macOS-only Packer bug — see BUILD_LOG.md), fixed, rebuild in progress as of this entry |
-| Autounattend.xml + bootstrap.ps1 (unattended install, WinRM enable) | 🚧 | Autounattend.xml itself validated for real (MBR partition fix, `AutoLogon` both confirmed working on a real install); bootstrap.ps1's delivery mechanism was broken (see above) and is fixed but not yet confirmed to actually run end-to-end |
+| Packer: Windows Server 2022 template (dc01/mem01, x86_64 TCG-emulated) | 🚧 | **build-tested for real** (session 4) — a full install completed, `AutoLogon` worked, a genuine desktop was reached. Two independent, real WinRM bugs found and fixed in sequence: (1) `D:\bootstrap.ps1` never ran, a macOS-only Packer `cd_files` bug; (2) once fixed, WinRM was *still* `Negotiate`-only — the communicator authenticates as `labadmin`, an account `Autounattend.xml` never created. Both fixed; rebuild with fix #2 in progress as of this entry |
+| Autounattend.xml + bootstrap.ps1 (unattended install, WinRM enable) | 🚧 | Autounattend.xml validated for real (MBR partition fix, `AutoLogon` confirmed working on a real install, now also creates the `labadmin` account the communicator needs); bootstrap.ps1's delivery mechanism was broken (see above) and is fixed but not yet confirmed to actually run end-to-end with both fixes together |
 | Packer: Kali ARM64 template (attacker01, native, preseed-driven) | 🚧 | **build-tested for real** — reaches Kali's real GRUB-based installer (three real bugs found and fixed: missing GPU/input devices, wrong EFI boot mechanism, missing `http_directory`) but blocked on an interactive "Select a language" dialog that survives Debian's own documented kernel-cmdline suppression params — see "Known blockers" |
 | Packer: Ubuntu ARM64 template (siem01, native, cloud-init) | ✅ | **built, booted, and SSH-reachable for real** — `infra/local/build/images/siem01/siem01.qcow2` is a genuine, working artifact. Two real bugs found and fixed beyond the obvious: Packer's cd_files ISO generation is broken on macOS (upstream bug, worked around with a custom pycdlib-based ISO builder) and `qemu-guest-agent.service` needs an explicit virtio-serial device nothing provides by default. See BUILD_LOG.md session 4 for the full account. |
 | `generate_bundles.py` (.utm bundle assembly from a manual blank template) | ✅ | `ruff`/`mypy` clean; plist key names are still best-effort, unverified against a real UTM install — see infra/local/README.md. **Not the path used to validate builds this session** — see "Known blockers" for why direct QEMU invocation was used instead |
@@ -167,24 +173,22 @@ language) against synthetic event dicts.
 
 ## Phase 5 — Platform
 
-The backend is the second fully-tested layer this session (after the
-Python/Ansible layers) — FastAPI/SQLAlchemy/pytest are all pip-installable
-without admin rights. The frontend needs Node.js, which needs Homebrew,
-which needs admin rights this account doesn't have — so it's written but
-genuinely unvalidated, flagged accordingly rather than presented with the
-same confidence. See `platform/README.md`.
+**The whole platform layer ran for real this session** — Docker via
+`colima` (Apple's Virtualization.framework, no Homebrew/admin TTY
+needed) unblocked what had been "written, not run" since Phase 5 was
+first built. See `platform/README.md`.
 
 | Item | Status | Notes |
 |---|---|---|
-| FastAPI backend (runner API, run history, coverage API, RBAC) | ✅ | **19/19 tests passing**, `ruff`/`mypy --strict` clean — `platform/backend/` |
-| SQLAlchemy schema (users, scenario_runs, run_findings) | ✅ | SQLite by default, Postgres via `platform/docker-compose.yml`; no Alembic migrations (documented scope decision, see `platform/backend/README.md`) |
-| Auth / RBAC (JWT, viewer/operator roles) | ✅ | tested — includes a negative test proving a `viewer` cannot trigger a run (403) |
-| `POST /runs` gated by the real scope guard | ✅ | tested against the real, unprovisioned `inventory/lab-scope.yaml` — returns 403, same as `make attack`'s CLI safety smoke test |
-| React/Next frontend (dashboard, run history, run detail, coverage heatmap) | 🚧 | written (`platform/frontend/`) — **not validated**: no local Node.js, so no `npm install`/`tsc`/`eslint`/browser render has happened |
-| ATT&CK-style coverage heatmap | 🚧 | `src/components/CoverageHeatmap.tsx` reads the real `GET /coverage` endpoint — same "written, unvalidated" caveat as the rest of the frontend |
-| Dark mode / responsive / accessible | 🚧 | Tailwind `dark:` classes used throughout; not verified in an actual browser |
-| `platform/docker-compose.yml` | 🚧 | written, syntax-checked (YAML parse) — not run, no local Docker |
-| CI backend/frontend jobs | ✅ | `.github/workflows/ci.yml`'s `backend` job now runs for real (two-step install — see `platform/backend/README.md`); `frontend` job will be the first real validation of that code whenever this branch is pushed |
+| FastAPI backend (runner API, run history, coverage API, RBAC) | ✅ | **19/19 `pytest` passing**, `ruff`/`mypy --strict` clean — `platform/backend/`. **Also run for real in a container**: found and fixed a genuine container-vs-host path bug (`app/config.py`'s directory-depth defaults resolve differently inside the built image than on the host `pytest` runs on — invisible to any test, only surfaced by a real `POST /runs` against a real container) — see `platform/docker-compose.yml`'s `LAB_SCOPE_FILE` comment and BUILD_LOG.md |
+| SQLAlchemy schema (users, scenario_runs, run_findings) | ✅ | Postgres via `platform/docker-compose.yml`, **run for real** this session; no Alembic migrations (documented scope decision, see `platform/backend/README.md`) |
+| Auth / RBAC (JWT, viewer/operator roles) | ✅ | tested (negative test: `viewer` can't trigger a run, 403) — **and exercised for real**: a genuine JWT login via a live container, through the real Next.js login form (Playwright) |
+| `POST /runs` gated by the real scope guard | ✅ | tested against the real, unprovisioned `inventory/lab-scope.yaml` (returns 403) — **and confirmed live**: the same 403, from a real browser session against a real running backend, not just `pytest` |
+| React/Next frontend (dashboard, run history, run detail, coverage heatmap) | ✅ | `platform/frontend/` — **genuinely validated this session**: built and run via Docker (no local Node.js needed once Docker itself was unblocked), driven end-to-end with Playwright (its own downloaded Chromium) — real login, real navigation, real screenshots in `docs/screenshots/` |
+| ATT&CK-style coverage heatmap | ✅ | `src/components/CoverageHeatmap.tsx` — **rendered for real** against the live `GET /coverage` endpoint, showing the actual 8/8 matrix; screenshotted (`docs/screenshots/platform-coverage-heatmap.png`) |
+| Dark mode / responsive / accessible | 🚧 | Tailwind `dark:` classes used throughout; not specifically exercised by the Playwright pass above (which used default/light) |
+| `platform/docker-compose.yml` | ✅ | **run for real** — postgres + backend + frontend all build and start via `colima`, healthchecks now genuinely gate readiness (see below) |
+| CI: `backend`/`frontend`/`platform-compose` jobs | ✅ | `.github/workflows/ci.yml`'s `backend` and `frontend` jobs run for real on every push; a new `platform-compose` job (session 4 continued) builds and starts the real compose stack on the runner's native Docker and re-runs the same login → 403 → coverage sequence — specifically to catch a recurrence of the container-path bug above. Its first real push found 2 genuine bugs (a stale `packer validate` regression, and backend/frontend having no `healthcheck:` so `--wait` raced ahead of the app actually being ready) — both fixed, verified locally, then confirmed green in a real Actions run (`e54e17a`, all 7 jobs) |
 
 ## Phase 6 — DFIR / IR
 
@@ -199,7 +203,7 @@ same confidence. See `platform/README.md`.
 | Item | Status | Notes |
 |---|---|---|
 | Architecture diagrams (mermaid) | ✅ | README.md's high-level host/platform diagram, plus [`docs/architecture.md`](docs/architecture.md)'s telemetry data-flow, `domain_dominance` attack-chain sequence, and purple-team-loop diagrams |
-| CI (`.github/workflows/ci.yml`) | ✅ | 6 jobs: `packer-validate`, `ansible-lint` (now installs `config/requirements.yml`'s collections + runs `ansible-playbook --syntax-check`, not just lint, so CI actually reproduces what was verified locally), `python-quality` (+ the attack-CLI safety smoke test), `detections-test` (+ coverage-matrix artifact upload), `backend`, `frontend` |
+| CI (`.github/workflows/ci.yml`) | ✅ | 7 jobs: `packer-validate`, `ansible-lint` (now installs `config/requirements.yml`'s collections + runs `ansible-playbook --syntax-check`, not just lint, so CI actually reproduces what was verified locally), `python-quality` (+ the attack-CLI safety smoke test), `detections-test` (+ coverage-matrix artifact upload), `backend`, `platform-compose` (real docker-compose stack, session 4 continued), `frontend`. **All 7 green on a real push** (`e54e17a`) |
 | Makefile | ✅ | every target does something real; `up`/`platform` correctly refuse to run past `check-tools` given this machine's blockers, rather than pretending to succeed |
 | Final honest ROADMAP pass | ✅ | this pass — fixed several stale 🚧/⬜ rows left over from earlier in this session, removed one duplicate row (Phase 3), renumbered/recounted ADRs |
 | CONTRIBUTING.md / CODE_OF_CONDUCT.md / CHANGELOG.md | ✅ | CHANGELOG.md updated this pass to summarize the whole session; CONTRIBUTING/CODE_OF_CONDUCT unchanged since Phase 0, still accurate |
@@ -302,16 +306,19 @@ same confidence. See `platform/README.md`.
   Kerberoasting/AS-REP-roasting setup remain the parts most worth
   re-checking by hand once that happens, since PowerShell-inside-
   `win_shell` is invisible to `ansible-lint`.
-- **Node.js and Docker remain unavailable on the *host* — same root cause
-  as QEMU used to be, not Packer/gh's. Docker on a *guest* is a different
-  story and now works fine.** `platform/frontend/`'s `npm install`/
-  `eslint`/`tsc`/`npm test` and `platform/docker-compose.yml` (which runs
-  outside the lab network, on the host) have still never run locally —
-  but both are verified in CI. Separately, `siem01` (a normal Ubuntu
-  guest, unrelated to what's installable on the macOS host) got Docker
-  via a plain `apt-get install docker.io` with no issues at all, and
-  `telemetry/elastic/docker-compose.yml` runs on it for real — see Phase
-  2/4 above.
+- **✅ RESOLVED (session 4 continued): Docker now runs on the host too,
+  via `colima` — not Homebrew, not Docker Desktop.** Docker Desktop's
+  own installer needs the same interactive-TTY admin prompt Homebrew
+  does; `colima` (standalone binary) + `lima` + the `docker` CLI +
+  `docker compose` plugin, all downloaded straight to `~/.local/bin` /
+  `~/.docker/cli-plugins` with no sudo, give a real Docker runtime via
+  Apple's native Virtualization.framework (`vz`) instead of QEMU.
+  `platform/docker-compose.yml` (postgres + backend + frontend) now
+  builds and runs for real — see Phase 5 above. Node.js specifically is
+  still not installed as a standalone host binary, but that no longer
+  matters: the frontend builds and runs *inside* its own container,
+  which is how it's actually validated now (Playwright driving a real
+  browser against it), not via a bare `npm install` on the host.
 - **`attacker01` (Kali) is blocked on an interactive language-selection
   prompt that survives Debian's own documented suppression mechanism.**
   Three real bugs were found and fixed getting this far (missing GPU/USB
@@ -328,15 +335,21 @@ same confidence. See `platform/README.md`.
   `simple-cdd/profiles=kali` + on-disc `preseed/file=` layer (visible in
   the boot line) may be interposing its own earlier prompt ahead of
   stock Debian-installer's.
-- **`dc01`/`mem01` (Windows) are close but not confirmed yet.** A build
-  got further than ever before this session — full install, `AutoLogon`,
-  a real desktop — before being blocked on WinRM (root-caused: the
-  `cd_files` bug above meant `bootstrap.ps1` never ran; confirmed by
-  probing the WinRM endpoint directly and reading its
-  `WWW-Authenticate: Negotiate`-only header, not by guessing from a
-  timeout). A rebuild with the real fix (the same pycdlib-based ISO
-  builder, extended to replicate the main disk + install ISO drives
-  alongside the custom seed since Packer's `qemuargs` override
-  suppresses *all* auto-generated drives once any custom one is added —
-  see BUILD_LOG.md) was still running as of this entry. `mem01` hasn't
-  been attempted at all — same template, once `dc01` is confirmed.
+- **`dc01`/`mem01` (Windows) are close but not confirmed yet — now on
+  a third, independently-diagnosed WinRM fix.** The `iso_builder.py` fix
+  (previous entry) got a build to a genuine, fully booted desktop for
+  the first time — confirmed live via VNC, not guessed — but WinRM
+  *still* showed `Negotiate`-only. Root cause this time, found by
+  driving the live, still-running VM directly over VNC rather than
+  killing and guessing blind: `windows-server.pkr.hcl`'s communicator
+  has always authenticated as `winrm_username = "labadmin"` (the same
+  `lab_admin_username` convention `siem01`/`attacker01` use), but
+  `Autounattend.xml` never created that account — only the built-in
+  `Administrator` existed, and `AutoLogon` (which `bootstrap.ps1`'s
+  `FirstLogonCommands` execution is tied to) ran as `Administrator`.
+  Packer was polling for a user that didn't exist and would have failed
+  even with a perfectly working `bootstrap.ps1`. Fixed by adding a
+  `labadmin` local account and switching `AutoLogon` to use it. A
+  rebuild with this fix (`build5`) was running as of this entry — see
+  BUILD_LOG.md for the full diagnosis. `mem01` hasn't been attempted at
+  all — same template, once `dc01` is confirmed.
