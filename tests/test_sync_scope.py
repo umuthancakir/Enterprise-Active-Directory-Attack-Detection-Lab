@@ -95,6 +95,28 @@ def test_unrelated_hosts_in_scope_are_left_untouched():
     assert mem01["provisioned"] is False
 
 
+def test_ssh_port_carried_through_when_present_in_state():
+    scope = base_scope()
+    state = {"hosts": {"dc01": {"provisioned": True, "ssh_port": 2222}}}
+    discovered_ips = {"dc01": "127.0.0.1"}
+
+    updated, _ = sync_scope.merge_scope(scope, state, discovered_ips)
+
+    dc01 = next(h for h in updated["hosts"] if h["id"] == "dc01")
+    assert dc01["ssh_port"] == 2222
+
+
+def test_ssh_port_absent_when_not_in_state():
+    scope = base_scope()
+    state = {"hosts": {"dc01": {"provisioned": True}}}
+    discovered_ips = {"dc01": "10.42.1.4"}
+
+    updated, _ = sync_scope.merge_scope(scope, state, discovered_ips)
+
+    dc01 = next(h for h in updated["hosts"] if h["id"] == "dc01")
+    assert "ssh_port" not in dc01
+
+
 def test_unknown_host_in_state_warns_and_does_not_crash():
     scope = base_scope()
     state = {"hosts": {"ghost01": {"provisioned": True}}}

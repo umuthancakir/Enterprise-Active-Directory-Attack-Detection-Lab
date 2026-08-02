@@ -70,6 +70,12 @@ def merge_scope(
         # require a recorded IP too, so the scope guard can't be tricked by
         # a bundle that exists but never actually booted.
         entry["provisioned"] = bool(host_state.get("provisioned") and ip)
+        # Optional — only present for hosts reached via a forwarded
+        # non-22 port rather than UTM's host-only network. See
+        # config/inventory/lab_scope_inventory.py's ssh_port comment.
+        ssh_port = host_state.get("ssh_port")
+        if ssh_port is not None:
+            entry["ssh_port"] = ssh_port
         if ip is None:
             warnings.append(
                 f"{host_id} has no IP recorded yet — marked not-provisioned "
