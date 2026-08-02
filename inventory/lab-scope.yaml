@@ -1,74 +1,45 @@
-# inventory/lab-scope.yaml
-#
-# THE SINGLE SOURCE OF TRUTH FOR AUTHORIZED ATTACK TARGETS.
-#
-# Every entry point into attack/ (and later platform/backend/'s runner API)
-# MUST resolve targets through the shared scope-guard loader for this file
-# before invoking any offensive tool. A host not listed here is refused at
-# runtime — there is no override flag. See docs/adr/0002-scope-guard.md.
-#
-# This file is meant to be kept in sync with infra/local's build state via
-# scripts/sync_scope.py after `make up` — see docs/adr/0004-revert-to-local-utm.md
-# for why the deploy target is local UTM/QEMU rather than a cloud provider.
-# Until the lab is actually provisioned, the `provisioned: false` flag on
-# every host below makes that explicit, and the scope guard must treat
-# unprovisioned hosts as not-runnable even though they're listed (a host
-# can be "in scope" once it exists without silently becoming "attackable"
-# before it exists).
-
 version: 1
-
 lab:
   name: eadadl-lab
   deploy_target: local
-  provisioned: false
-
+  provisioned: true
 hosts:
-  - id: dc01
-    role: domain_controller
-    hostname: dc01.eadadl.lab
-    ip: null            # filled in by scripts/sync_scope.py from infra/local/discovered-ips.yaml
-    os: windows_server
-    provisioned: false
-    build_artifact: infra/local/build/images/dc01/dc01.qcow2
+- id: dc01
+  role: domain_controller
+  hostname: dc01.eadadl.lab
+  ip: null
+  os: windows_server
+  provisioned: false
+  build_artifact: infra/local/build/images/dc01/dc01.qcow2
+- id: mem01
+  role: member_server
+  hostname: mem01.eadadl.lab
+  ip: null
+  os: windows_server
+  provisioned: false
+  build_artifact: infra/local/build/images/mem01/mem01.qcow2
+- id: attacker01
+  role: attacker
+  hostname: attacker01.eadadl.lab
+  ip: null
+  os: linux_kali
+  provisioned: false
+  build_artifact: infra/local/build/images/attacker01/attacker01.qcow2
+  notes: 'The attacker box is the only host the engine invokes tooling FROM. It is
+    never itself a valid --target for offensive techniques.
 
-  - id: mem01
-    role: member_server
-    hostname: mem01.eadadl.lab
-    ip: null
-    os: windows_server
-    provisioned: false
-    build_artifact: infra/local/build/images/mem01/mem01.qcow2
+    '
+- id: siem01
+  role: siem
+  hostname: siem01.eadadl.lab
+  ip: 127.0.0.1
+  os: linux_ubuntu
+  provisioned: true
+  build_artifact: infra/local/build/images/siem01/siem01.qcow2
+  notes: 'Telemetry sink only. Never a valid --target for offensive techniques.
 
-  - id: attacker01
-    role: attacker
-    hostname: attacker01.eadadl.lab
-    ip: null
-    os: linux_kali
-    provisioned: false
-    build_artifact: infra/local/build/images/attacker01/attacker01.qcow2
-    notes: >
-      The attacker box is the only host the engine invokes tooling FROM.
-      It is never itself a valid --target for offensive techniques.
-
-  - id: siem01
-    role: siem
-    hostname: siem01.eadadl.lab
-    ip: null
-    os: linux_ubuntu
-    provisioned: false
-    build_artifact: infra/local/build/images/siem01/siem01.qcow2
-    notes: >
-      Telemetry sink only. Never a valid --target for offensive techniques.
-
-# wks01 (workstation) was dropped from the local footprint to keep the
-# emulated-x86_64 VM count small — see docs/adr/0004-revert-to-local-utm.md.
-# Reintroducing it is a documented option (add a third windows-server.pkr.hcl
-# build + hosts.yaml entry), not a removed requirement.
-
-# Roles that the scope guard must never accept as an attack target, even if
-# an id above resolves successfully. Defense in depth alongside the
-# provisioned/id checks.
+    '
+  ssh_port: 2222
 non_attackable_roles:
-  - attacker
-  - siem
+- attacker
+- siem
