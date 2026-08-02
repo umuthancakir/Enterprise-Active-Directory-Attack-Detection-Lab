@@ -160,6 +160,59 @@ jobs:
         working-directory: platform/backend
         run: pytest
 
+  platform-compose:
+    name: Platform stack (docker compose, real containers)
+    runs-on: ubuntu-latest
+    # GitHub-hosted runners have Docker pre-installed natively — unlike
+    # this project's local dev machine (see BUILD_LOG.md session 4 for
+    # how Docker got installed there anyway, via colima). This job exists
+    # because a real bug (app/config.py's path defaults resolving
+    # differently inside the container than on the host that pytest runs
+    # on) was invisible to platform/backend's own pytest suite and only
+    # surfaced by actually running the built containers and hitting a
+    # real endpoint — see platform/docker-compose.yml's LAB_SCOPE_FILE
+    # comment. This job is what keeps that class of bug caught on every
+    # push instead of only when someone happens to run it by hand again.
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and start the stack
+        working-directory: platform
+        env:
+          POSTGRES_PASSWORD: ci-only-postgres-password
+          BACKEND_SECRET_KEY: ci-only-backend-secret-key
+          BACKEND_ADMIN_PASSWORD: ci-only-admin-password
+        run: docker compose up -d --build --wait --wait-timeout 120
+      - name: Backend health check
+        run: curl -sf http://localhost:8000/health
+      - name: Frontend responds
+        run: curl -sf http://localhost:3000 -o /dev/null
+      - name: "Real login + scope-guard-backed endpoints (the actual regression check)"
+        # Proves LAB_SCOPE_FILE/COVERAGE_MATRIX_FILE resolve correctly
+        # inside the container: a 500 here (not the expected 403) means
+        # the backend can't find inventory/lab-scope.yaml again.
+        run: |
+          TOKEN=$(curl -sf -X POST http://localhost:8000/auth/login \
+            --data-urlencode "username=admin" --data-urlencode "password=ci-only-admin-password" \
+            | python3 -c "import json,sys; print(json.load(sys.stdin)['access_token'])")
+          STATUS=$(curl -s -o /tmp/run-response.json -w "%{http_code}" -X POST http://localhost:8000/runs \
+            -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+            -d '{"scenario":"credential_harvest","mode":"dry_run"}')
+          cat /tmp/run-response.json
+          if [ "$STATUS" != "403" ]; then
+            echo "FAIL: expected 403 (scope guard correctly refusing — no host provisioned on this branch), got $STATUS" >&2
+            exit 1
+          fi
+          echo "OK: got the expected 403 — the scope guard resolved the real lab-scope.yaml and correctly refused."
+          curl -sf http://localhost:8000/coverage -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
+      - name: Show logs on failure
+        if: failure()
+        working-directory: platform
+        run: docker compose logs
+      - name: Tear down
+        if: always()
+        working-directory: platform
+        run: docker compose down -v
+
   frontend:
     name: Frontend lint & test (Next.js)
     runs-on: ubuntu-latest
