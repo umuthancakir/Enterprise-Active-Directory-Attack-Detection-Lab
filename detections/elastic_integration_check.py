@@ -45,6 +45,13 @@ SIGMA_DIR = Path(__file__).resolve().parent / "sigma"
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 
 ELASTICSEARCH_URL = os.environ.get("ELASTICSEARCH_URL", "http://localhost:9200")
+# Optional — telemetry/elastic/docker-compose.yml runs with
+# xpack.security.enabled=true (the real, documented siem01 deployment),
+# unlike a bare `elasticsearch` tarball run locally with security off for
+# quick local checks. Both are real, supported ways to point this at a
+# cluster; only the former needs credentials.
+ELASTICSEARCH_USERNAME = os.environ.get("ELASTICSEARCH_USERNAME")
+ELASTICSEARCH_PASSWORD = os.environ.get("ELASTICSEARCH_PASSWORD")
 INDEX_PREFIX = "eadadl-detections-check"
 
 # Every event field here is a short, exact-value Windows Security log field
@@ -125,7 +132,15 @@ def check_technique(es: Elasticsearch, technique_id: str) -> tuple[bool, str]:
 
 
 def main() -> int:
-    es = Elasticsearch(ELASTICSEARCH_URL)
+    basic_auth = None
+    if ELASTICSEARCH_USERNAME and ELASTICSEARCH_PASSWORD:
+        basic_auth = (ELASTICSEARCH_USERNAME, ELASTICSEARCH_PASSWORD)
+    # verify_certs=False: same "don't validate self-signed lab TLS"
+    # stance as ansible_winrm_server_cert_validation=ignore in
+    # config/inventory/lab_scope_inventory.py — this only matters at all
+    # once a real cluster is reached over https, which the documented
+    # siem01 deployment eventually will be (see telemetry/elastic/README.md).
+    es = Elasticsearch(ELASTICSEARCH_URL, basic_auth=basic_auth, verify_certs=False)
     try:
         info = es.info()
     except Exception as exc:  # noqa: BLE001 — reporting connectivity failure, not handling it
