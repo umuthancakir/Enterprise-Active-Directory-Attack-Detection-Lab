@@ -15,6 +15,28 @@ This is a build-in-progress. **[ROADMAP.md](ROADMAP.md)** and
 done versus planned — this README describes the target architecture, not a
 finished product.
 
+**What's genuinely running right now, not just written:** `siem01`
+(Ubuntu SIEM host) is built, booted, and reachable, with a real,
+security-enabled Elastic cluster deployed on it and all 8 Sigma
+detections verified against it. The platform layer (FastAPI + Postgres
++ Next.js) runs end-to-end via Docker, verified with real browser
+automation (login → a real scope-guard 403 refusal → the real 8/8
+ATT&CK coverage heatmap — screenshots below). All 7 CI jobs are green
+on every push. `dc01` (the domain controller) reaches a real, booted
+Windows desktop but isn't WinRM-reachable yet; `attacker01` is blocked
+on an installer prompt. See [ROADMAP.md](ROADMAP.md) for the precise,
+current breakdown — nothing here is marked done unless it actually ran.
+
+### Screenshots
+
+| SIEM host, first real boot | Platform: coverage heatmap |
+|---|---|
+| ![siem01 first boot](docs/screenshots/siem01-first-boot-console.png) | ![ATT&CK coverage heatmap](docs/screenshots/platform-coverage-heatmap.png) |
+
+| Platform: login | Platform: scope guard refusing an unsafe run |
+|---|---|
+| ![Login page](docs/screenshots/platform-login-page.png) | ![Run refused 403](docs/screenshots/platform-dashboard-run.png) |
+
 ## ⚠️ Authorized use only
 
 This repository provisions a **deliberately vulnerable** Active Directory
@@ -121,18 +143,29 @@ picture, including what's automated and what isn't.
 
 ### Prerequisites
 
-Install via Homebrew (this account currently lacks the sudo access needed to
-install Homebrew itself — run these as an admin, or ask an admin to run them
-once):
+Install via Homebrew, if you have admin rights:
 
 ```bash
 brew install packer qemu ansible
 ```
 
 UTM.app (a GUI hypervisor, not a Homebrew package) must already be
-installed — it was present on this machine already.
+installed.
 
-### Quick start (once infra/local/ is buildable — see ROADMAP.md)
+**No admin rights / no interactive sudo prompt available?** Every tool
+this project needs has a proven, working no-Homebrew install path — used
+to genuinely build and validate `siem01` and run the whole platform
+layer this session:
+
+- **Packer**: standalone binary from `releases.hashicorp.com`.
+- **QEMU**: build from source against conda-forge's build dependencies
+  (no sudo) — see `BUILD_LOG.md` session 4 for the exact recipe.
+- **Ansible**: `pip install --user ansible-core ansible-lint`.
+- **Docker** (for `make platform`): `colima` (Apple's
+  Virtualization.framework, not Docker Desktop) — see `handbook.txt`
+  §2.7 for the exact recipe.
+
+### Quick start
 
 ```bash
 cp .env.example .env          # fill in ADMIN_PASSWORD + ISO URLs/checksums
