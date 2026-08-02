@@ -17,18 +17,34 @@ This is a build-in-progress. ROADMAP.md and BUILD_LOG.md are the source of
 truth for what actually works. As of this handbook:
 
   * Phase 0 (repo scaffold, governance docs, ADRs, scope guard, CI) ... DONE
-  * Phase 1 (local UTM/QEMU lab: Packer templates + Ansible roles) ..... WRITTEN,
-        NOT YET BUILT OR RUN. `packer fmt`/`packer init`/`packer validate` DO
-        now run for real (Packer installed via its standalone release binary,
-        no Homebrew needed - see "Installing tools without Homebrew" below)
-        and are also verified in CI on every push. What's still unvalidated
-        is an actual `packer build`: that needs QEMU itself, which (unlike
-        Packer) has no standalone binary and still needs Homebrew/a package
-        manager. The Ansible layer is a partial exception too: `pip install
-        --user ansible-core ansible-lint` needs no sudo, so `ansible-playbook
-        --syntax-check` and `ansible-lint` DO run and pass clean (production
-        profile), and are now also checked in CI - real static validation,
-        just not a real WinRM/SSH target yet.
+  * Phase 1 (local UTM/QEMU lab: Packer templates + Ansible roles) ..... BUILT
+        AND RUNNING for siem01; dc01 close; attacker01 blocked. QEMU itself
+        is now genuinely installed too - built from source via conda-forge's
+        build dependencies (no Homebrew, no sudo - see BUILD_LOG.md session
+        4), after Homebrew/MacPorts both turned out to need the same
+        interactive-TTY sudo prompt this environment can't supply. siem01
+        (Ubuntu, native arm64) is BUILT, BOOTED, and SSH-reachable for real
+        - infra/local/build/images/siem01/siem01.qcow2 is a genuine working
+        artifact, verified twice (rebuilt from scratch to confirm the fix
+        was reproducible, not a fluke). dc01 (Windows Server) got a
+        complete real install, working AutoLogon, and a genuine desktop -
+        blocked on WinRM until a real, diagnosed bug (not a guess) was
+        fixed; a rebuild was in progress as this was last updated, see
+        ROADMAP.md for current status. attacker01 (Kali) is blocked on an
+        interactive language-selection prompt that survives Debian's own
+        documented suppression mechanism - see ROADMAP.md Known Blockers.
+        UTM itself still has no scriptable boot path, so this session's
+        validation booted images directly via qemu-system-{aarch64,x86_64}
+        instead of through the UTM app - a real, working host, just not
+        the intended GUI path (still needed for a genuine multi-VM lab
+        network - see infra/local/README.md). The Ansible layer: `pip
+        install --user ansible-core ansible-lint` needs no sudo, so
+        `ansible-playbook --syntax-check` and `ansible-lint` DO run and
+        pass clean (production profile), checked in CI too - and
+        `ansible-playbook config/site.yml` was run for real against the
+        live inventory this session (0 hosts matched, honestly - site.yml
+        only targets domain_controller/member_server and only siem01 is
+        provisioned so far).
   * Phase 3 (attack scenario engine) ................................... DONE
         in DRY-RUN mode. `make attack SCENARIO=<name>` genuinely works today:
         it resolves targets through the scope guard, prints the exact
@@ -45,16 +61,22 @@ truth for what actually works. As of this handbook:
         hand-written local catalog (3 recon techniques), dry-run only,
         same scope guard - `make attack-atomic TECHNIQUE=T1087.002`.
         NOT a vendored copy of the upstream ART project.
-  * Phase 2 (telemetry: Sysmon, Windows audit policy/SACLs, WEF, ......... WRITTEN,
-    Elastic shipping, baseline queries)                                  NOT DEPLOYED.
-        All config (telemetry/sysmon/, telemetry/windows-audit-policy/,
-        telemetry/wef/, telemetry/winlogbeat/, telemetry/elastic/) is
-        syntax-validated (XML/YAML/JSON parse) but not applied to a real
-        host or cluster - none exists yet. Not wired into config/dc or
-        config/member's Ansible yet either - currently a documented manual
-        procedure. See docs/adr/0006-telemetry-architecture.md for the
-        design (and why Sysmon alone can't detect 4 of this lab's 6
-        implemented misconfigs - Windows Security auditing is required).
+  * Phase 2 (telemetry: Sysmon, Windows audit policy/SACLs, WEF, ......... PARTIAL.
+    Elastic shipping, baseline queries)
+        telemetry/elastic/ (docker-compose.yml + index-template.json) is now
+        REALLY DEPLOYED - session 4 ran it for real on siem01 (Docker
+        installed on the guest via plain apt-get, unrelated to the host's
+        Homebrew situation), applied the real index template via a real API
+        call, and verified all 8 Sigma detections against it - see Phase 4
+        below and BUILD_LOG.md. Everything else here (telemetry/sysmon/,
+        telemetry/windows-audit-policy/, telemetry/wef/,
+        telemetry/winlogbeat/) is still syntax-validated only (XML/YAML
+        parse), not applied to a real Windows host - dc01 isn't reachable
+        yet. Not wired into config/dc or config/member's Ansible yet either
+        - currently a documented manual procedure. See
+        docs/adr/0006-telemetry-architecture.md for the design (and why
+        Sysmon alone can't detect 4 of this lab's 6 implemented misconfigs -
+        Windows Security auditing is required).
   * Phase 4 (detection library: Sigma rules + fixture tests) ............ DONE
         against synthetic fixtures. `make detections-test` genuinely works
         today, no lab needed: 8 Sigma rules (one per attack/techniques.py
@@ -63,8 +85,16 @@ truth for what actually works. As of this handbook:
         to fire against synthetic telemetry via detections/matcher.py
         (which reuses pySigma's real condition parser, not a hand-rolled
         one). 8/8 techniques covered - writes detections/coverage_matrix.json
-        every run. NOT validated against real telemetry from a running
-        lab - none exists yet.
+        every run. Session 4 added a second, real validation path:
+        detections/elastic_backend.py converts every rule to a real Lucene
+        query via pySigma's own Elasticsearch backend, and
+        detections/elastic_integration_check.py (`make
+        detections-test-elastic`) proves those queries fire correctly
+        against a REAL Elasticsearch cluster - run against siem01's actual
+        deployed telemetry/elastic/docker-compose.yml, 8/8 passed. Still
+        NOT validated against real telemetry generated by a running
+        Windows host - dc01 isn't reachable yet, so nothing has produced a
+        real Security event to detect.
   * Phase 5 (platform: FastAPI backend + Postgres + Next.js frontend) ... PARTIAL.
         Backend (platform/backend/) is DONE and fully tested: 19/19 tests
         passing, ruff/mypy --strict clean. JWT auth with viewer/operator
@@ -434,14 +464,22 @@ STEP 7 - TEAR DOWN when finished (stops the spend)
         -> If this is because your shell can't answer an interactive sudo
            password prompt (not because the account genuinely lacks admin
            rights - check with `id`, look for `admin` in the groups list),
-           Packer specifically doesn't need Homebrew at all: download its
-           standalone binary from releases.hashicorp.com and put it on
-           PATH (see BUILD_LOG.md session 3). QEMU and Ansible's Homebrew
-           formula don't have that escape hatch, though - Ansible via
-           `pip install --user ansible-core ansible-lint` does, but QEMU
-           genuinely needs Homebrew/a package manager. If sudo is blocked
-           for a different reason, get an admin to run it or grant your
-           account admin, then retry.
+           neither Packer NOR QEMU actually need Homebrew. Packer:
+           download its standalone binary from releases.hashicorp.com and
+           put it on PATH. QEMU: build it from source using conda-forge's
+           build dependencies (pixman, glib, pkg-config, ninja, meson,
+           libslirp - all real osx-arm64 packages) in a dedicated conda
+           env, `./configure --target-list=x86_64-softmmu,aarch64-softmmu
+           ...`, `ninja`, `ninja install` - see BUILD_LOG.md session 4 for
+           the exact recipe, including two real bugs hit along the way
+           (ninja install drops the rpath to the conda env's libraries,
+           and re-signing to fix that separately strips the HVF
+           entitlement QEMU's own install script applies - fix both with
+           one codesign call using --entitlements, not two separate
+           calls). Ansible: `pip install --user ansible-core ansible-lint`
+           needs no sudo either. If sudo is blocked for a different
+           reason, get an admin to run it or grant your account admin,
+           then retry.
   * generate_bundles.py errors on plist keys
         -> Do Step 3 (plutil) and reconcile the key names with your UTM version.
   * Windows VMs painfully slow
