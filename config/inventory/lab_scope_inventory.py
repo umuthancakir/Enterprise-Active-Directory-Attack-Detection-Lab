@@ -85,6 +85,21 @@ def build_inventory(scope: dict[str, Any]) -> dict[str, Any]:
                     "ansible_become_method": "sudo",
                 }
             )
+            # UTM's host-only network (the intended deploy path) gives
+            # each guest a real routable IP, so port 22 is always right
+            # and no host ever needs this. It's here because this
+            # project's actual first live-host validation used direct
+            # QEMU + usermode/SLIRP NAT instead (see BUILD_LOG.md session
+            # 4 — UTM has no scriptable boot path, so the VM ran via a
+            # raw qemu-system-aarch64 invocation for testing purposes) —
+            # SLIRP can only reach the guest via a host-side forwarded
+            # port, and that forward can't be port 22 itself without
+            # root (ports <1024 need a privileged bind). ssh_port lets
+            # lab-scope.yaml record whatever port a given deployment
+            # topology actually needs without hardcoding an assumption
+            # that's only true for one of the two paths.
+            if host.get("ssh_port"):
+                vars_["ansible_port"] = host["ssh_port"]
 
         hostvars[host_id] = vars_
 

@@ -81,6 +81,25 @@ def test_linux_host_gets_ssh_connection_vars():
     assert "attacker01" in inventory["linux"]["hosts"]
 
 
+def test_linux_host_with_no_ssh_port_gets_no_ansible_port_override():
+    scope = {"hosts": [host(id="attacker01", role="attacker")]}
+
+    inventory = lab_scope_inventory.build_inventory(scope)
+
+    assert "ansible_port" not in inventory["_meta"]["hostvars"]["attacker01"]
+
+
+def test_linux_host_with_ssh_port_gets_ansible_port_override():
+    # Real-world case: a host reached via a forwarded non-22 port rather
+    # than UTM's host-only network — see the ssh_port comment in
+    # lab_scope_inventory.py for why this exists.
+    scope = {"hosts": [host(id="siem01", role="siem", ssh_port=2222)]}
+
+    inventory = lab_scope_inventory.build_inventory(scope)
+
+    assert inventory["_meta"]["hostvars"]["siem01"]["ansible_port"] == 2222
+
+
 def test_group_only_appears_when_it_has_members():
     scope = {"hosts": [host(id="dc01", role="domain_controller")]}
 
