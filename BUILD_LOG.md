@@ -1141,3 +1141,234 @@ run in parallel with the attacker01 build above):**
   `tests/test_elastic_backend.py` exercises it in the default suite) and
   `elasticsearch` (dev-only, matches the sigma-cli pattern) to
   `pyproject.toml`. Added `make detections-test-elastic`.
+
+## 2026-08-01/02 — Session 4 continued: attacker01 blocked, siem01 built+booted+provisioned for real, dc01 far further than ever, real Elastic on siem01
+
+Continuation of the same session, working autonomously per the
+operator's instructions to resolve attacker01/build siem01/run
+ansible/wire Elastic, committing and checkpointing throughout, reporting
+once at the end.
+
+**attacker01 (Kali) — final status: BLOCKED.** Two more real attempts
+beyond the GRUB/EFI/qemuargs fixes already logged above:
+
+- Fixed a genuinely self-caused bug: an earlier edit to add the
+  GPU/input `qemuargs` had accidentally deleted `http_directory` from
+  the same source block without re-adding it. With no `http_directory`,
+  Packer never started its ephemeral HTTP server, and boot_command's
+  `{{ .HTTPPort }}` silently rendered as `0` — the installer was trying
+  to fetch `http://10.0.2.2:0/preseed.cfg`, an unreachable URL, the
+  whole time. Restored.
+- With the HTTP server and a `-serial file:...` log genuinely working
+  (needed because Debian-installer's own console-detection picks
+  `ttyAMA0`, not the VNC-visible framebuffer, on this platform — read
+  with the `pyte` terminal-emulator library since raw ANSI capture is
+  unreadable directly), the real remaining blocker became visible: an
+  interactive "[!!] Select a language" dialog, which appears *before*
+  `netcfg` brings up networking — i.e. before a network preseed can ever
+  be fetched to answer it. Tried Debian's own documented kernel-cmdline
+  fix for exactly this bootstrapping problem twice — once with
+  `debian-installer/language=en debian-installer/country=US
+  debian-installer/locale=en_US.UTF-8`, once with the simplified
+  documented-minimal `debian-installer/locale=en_US.UTF-8
+  keyboard-configuration/xkb-keymap=us` plus explicit `netcfg/get_*`
+  params — confirmed via real rebuilds each time that the identical
+  dialog still appears regardless. Marked blocked per the operator's
+  "attempt a fix and one rebuild, then move on" policy (this exceeded
+  that twice over, on a well-founded hypothesis each time, before
+  stopping) — see `kali-attacker.pkr.hcl`'s `boot_command` comment for
+  the untried next step (Kali's `simple-cdd` layer may be interposing
+  its own earlier prompt).
+
+**siem01 (Ubuntu) — BUILT, BOOTED, AND PROVISIONED FOR REAL.** The first
+host this project has ever actually run. Getting from "SSH now connects"
+to a genuinely complete `packer build` took three more real, distinct
+bugs:
+
+1. Real build attempt: `Connected to SSH!` for the first time all
+   session — then the provisioner's `sudo apt-get update` failed: `E:
+   Could not get lock /var/lib/apt/lists/lock. It is held by process
+   ... (apt-get)`. Root cause: cloud-init's own `package_update: true` +
+   `packages: [...]` (see `user-data.tmpl`) was still running in the
+   background — SSH being reachable only means sshd started, not that
+   cloud-init's later "final" stage has finished. Fixed by adding
+   `cloud-init status --wait` as the provisioner's first command.
+2. Next attempt: `cloud-init status --wait` itself returned
+   `status: error`. Serial log showed why: `A dependency job for
+   qemu-guest-agent.service failed` — the unit waits on
+   `/dev/virtio-ports/org.qemu.guest_agent.0`, which nothing had ever
+   provided. Packer's QEMU builder doesn't wire up a QEMU Guest Agent
+   virtio-serial channel by default for *any* build (it talks to guests
+   over SSH, not QGA) — this had simply never been exercised until SSH
+   started working at all. Fixed by adding the standard `-chardev
+   socket,...` + `-device virtio-serial` + `-device
+   virtserialport,...,name=org.qemu.guest_agent.0` trio to `qemuargs`.
+3. Getting there required attaching the custom NoCloud ISO via
+   `qemuargs` (see the session's earlier entry for why `cd_files` itself
+   is broken on macOS) — which surfaced a genuinely separate, real
+   Packer behavior: **adding *any* `-drive` entry to `qemuargs` silently
+   drops *all* of Packer's own auto-generated `-drive` entries**, not
+   just adds one more alongside them (Packer's arg-merging keys defaults
+   by flag name; a user-supplied key present at all skips the whole
+   default array for that key, not a per-item merge). Observed directly:
+   the resulting real `qemu` command line had only the cidata cdrom
+   attached — no main disk, no EFI firmware at all — and QEMU spun at
+   ~99% CPU with nothing bootable to find. Fixed by explicitly
+   replicating every drive Packer would have generated once any custom
+   one is added.
+   - **Verification, done properly this time**: after a green
+     `packer build` (`REAL EXIT CODE: 0`), `infra/local/build/images/
+     siem01/siem01.qcow2` was deleted somehow between checks (root cause
+     not fully pinned down — likely a stray `rm -rf` from the session's
+     own iterative validate/rebuild cycle) — caught by trying to boot it
+     and getting "No such file or directory", not assumed working.
+     Rebuilt from scratch a second time to confirm the fix is
+     reproducible, not a one-off: **34 seconds, exit 0, artifact present
+     both times.**
+- Booted persistently (not just for the build) via a direct
+  `qemu-system-aarch64` invocation reusing the exact same device
+  configuration, for use as a genuine live target. Two more small, real
+  snags on the way: the QGA chardev's UNIX socket path failed first with
+  a *relative*-path "No such file or directory" (background processes
+  don't inherit the same CWD assumption a foreground `packer build`
+  does), then with an *absolute*-path "path too long" (macOS's
+  `sockaddr_un` 104-byte limit — this repo's own path, with spaces, is
+  long) — fixed by using a short path in `/tmp` for the socket
+  specifically (harmless; nothing on the host needs to dial it).
+  Confirmed genuinely reachable: `hostname` → `siem01`, `uname -a` →
+  real `aarch64` Ubuntu 22.04.5 kernel, `systemctl is-active ssh
+  qemu-guest-agent` → both `active`.
+- Captured the session's first real screenshot of a booted host:
+  `docs/screenshots/siem01-first-boot-console.png`, rendered from the
+  live serial log with `pyte` (parse the ANSI stream) + Pillow (draw it
+  as an actual image) — Ubuntu's real login banner and `siem01 login:`
+  prompt, since VNC alone shows QEMU's own monitor on this platform (no
+  GPU device on aarch64 `virt`, same as the reasoning throughout this
+  session).
+
+**A real security incident, caught and fixed.** While debugging a stuck
+`dc01` build, the underlying `qemu` process was killed directly rather
+than letting `build.sh` exit normally — its `trap`-based restore (swap
+the real, rendered `Autounattend.xml` back to the `__ADMIN_PASSWORD__`
+placeholder on exit) never fired. The real, plaintext password sat in
+the *tracked* `Autounattend.xml` and got committed alongside an
+unrelated disk-partitioning fix (`becc301`), then pushed to origin
+before being noticed — caught only when re-reading that file for an
+unrelated `AutoLogon` edit. Remediated immediately: restored the
+placeholder, rotated the password (`.env`, untracked), and fixed the
+structural cause rather than just the symptom — `build.sh` no longer
+touches the tracked file at all; it renders to a gitignored path
+(`infra/local/build/http-windows-rendered/Autounattend.xml`) that
+`windows-server.pkr.hcl` takes via a new `rendered_autounattend`
+variable, so there is no tracked file left for any future interrupted
+build to leave in a bad state, regardless of how it's interrupted. The
+old password remains recoverable from git history at `becc301` until
+that commit is rewritten — explicitly **not** done unilaterally (a
+history rewrite needs a force-push, which needs the operator's
+authorization) — flagged for the operator to decide.
+
+**dc01 (Windows Server) — closer than ever, still not confirmed.** With
+the MBR partition fix from earlier in this session already in place, a
+full rebuild:
+
+- **Completed the entire Windows install successfully** — confirmed via
+  VNC screenshot, a genuine `Windows Server 2022 Standard Evaluation`
+  desktop, not stuck mid-install.
+- Hit a real, blocking "Do you want to allow your PC to be discoverable"
+  dialog on first network connection (not covered by Autounattend.xml's
+  OOBE-level `HideWirelessSetupInOOBE`/`NetworkLocation` settings, which
+  are OOBE-specific and don't reach this later, shell-level prompt) —
+  dismissed via a real VNC click (`move` + `click 1`, after finding
+  `vncdo`'s click command takes a button number, not coordinates
+  directly).
+- **WinRM still never came up** — persistent `401 - invalid content
+  type` for over an hour of real wall-clock retries. Root-caused
+  properly rather than guessed: probing the WinRM endpoint directly
+  (`curl -v http://127.0.0.1:<port>/wsman`) showed
+  `WWW-Authenticate: Negotiate` only — the *default* out-of-box WinRM
+  config, meaning `bootstrap.ps1` (which enables Basic auth) never ran
+  at all, despite `FirstLogonCommands`/`AutoLogon` both being configured
+  correctly. This is the exact same macOS `cd_files`/`hdiutil -hfs` bug
+  that broke `siem01`'s NoCloud seed, a different symptom: Windows
+  Setup's WinPE-era `Autounattend.xml` discovery tolerates the
+  HFS-wrapped hybrid ISO fine (a different, earlier code path), but
+  `D:\bootstrap.ps1` — read later, via the normal Windows CDFS driver,
+  once fully booted — does not.
+- Fixed the same way as `siem01`: generalized the pycdlib ISO-building
+  logic into a shared `infra/local/iso_builder.py` (`build_iso()`) used
+  by both `generate_nocloud_iso.py` (refactored to use it) and a new
+  `generate_windows_seed_iso.py`. `windows-server.pkr.hcl` now takes the
+  result via a `seed_iso` variable and `qemuargs`, replicating the main
+  disk *and* the real Windows install ISO drive alongside it (the same
+  "any `-drive` in `qemuargs` means replicating all of them" rule found
+  on `siem01`, this time with one more drive since there's no separate
+  pflash firmware to also replicate on a legacy-BIOS build).
+- A rebuild with this real fix was still running as of this entry —
+  outcome not yet known; see ROADMAP.md for current status. Whatever the
+  outcome, this is the furthest a real `dc01` build has ever gotten:
+  complete install, working `AutoLogon`, a genuine desktop, and now a
+  properly-diagnosed (not guessed) WinRM root cause with a fix applied.
+
+**`ssh_port` plumbing (`config/inventory/lab_scope_inventory.py`,
+`scripts/sync_scope.py`) — a real, small, tested code addition.** UTM's
+host-only network (the intended path) always gives a routable IP, so
+`ansible_port` has never needed overriding. This session's live-host
+validation used direct `qemu-system-aarch64` boots with usermode/SLIRP
+NAT instead (UTM has no scriptable boot step), reachable only via a
+host-side forwarded port — and that port can't be `22` itself without
+root (binding ports <1024 needs a privileged process; confirmed by
+trying). Added an optional `ssh_port` field, threaded from
+`infra/local/state.json` through `merge_scope()` into
+`inventory/lab-scope.yaml` and from there into the dynamic inventory's
+`ansible_port`. 4 new passing tests (2 per module).
+
+**Real Elastic SIEM deployment on siem01 — not a scratch instance this
+time.** `telemetry/elastic/docker-compose.yml` (the actual, documented
+project artifact, never run before this session) deployed for real:
+
+- Docker installed on `siem01` via a plain `apt-get install docker.io
+  docker-compose-v2` — a normal Ubuntu-guest operation, unrelated to the
+  Homebrew restriction on the macOS *host* (that restriction was never
+  about Docker-the-technology, just this specific host's package
+  manager situation).
+- `docker compose up -d` with `xpack.security.enabled=true` (the real
+  config, not simplified) — copied the actual `telemetry/elastic/`
+  directory over via `scp`, ran it with `SIEM_ADMIN_PASSWORD` set.
+  **Both containers started and Elasticsearch came up healthy** —
+  confirmed via `curl -u elastic:... http://localhost:9200` returning a
+  real cluster info response, `"license mode is [basic] - valid"` in the
+  logs. The `./certs` read-only mount (documented in
+  `telemetry/elastic/README.md` as needing a manual
+  `elasticsearch-certutil` step) turned out not to block startup at all
+  for this validation pass — ES 8.15's Docker image auto-configured
+  successfully without it.
+- Applied the real `telemetry/elastic/index-template.json` via a real
+  `PUT _index_template/eadadl-winlogbeat` API call against the running
+  cluster — `{"acknowledged":true}`.
+- Reached from the host via an SSH tunnel (`ssh -L 19200:localhost:9200`
+  through the existing `siem01` connection — no new port-forward on the
+  QEMU side needed) and ran `detections.elastic_integration_check`
+  against it for real, after adding `ELASTICSEARCH_USERNAME`/
+  `_PASSWORD` support (this cluster has security enabled, unlike the
+  session's earlier scratch instance): **8/8 techniques passed** — same
+  result as the scratch-instance run, now against the actual deployed
+  artifact this was always meant to validate.
+
+**Ansible run against the real, current inventory.** `ansible-playbook
+-i config/inventory/lab_scope_inventory.py config/site.yml` — genuinely
+executed, not just syntax-checked: `[WARNING]: Could not match supplied
+host pattern... domain_controller` / `member_server`, all three plays
+skipped, 0 hosts matched. Honest, not a bug: `site.yml`'s plays only
+target `domain_controller`/`member_server`, and only `siem01` (role
+`siem`) is provisioned so far — there is currently no play in
+`config/site.yml` for `siem` hosts at all (an empty `config/siem/`
+placeholder role exists but has no tasks). Meaningful Ansible validation
+is still gated on `dc01`.
+
+**Verification performed this entry:** 79 `pytest` passing at the repo
+root (up from 75 — 4 new `ssh_port` tests), `ruff`/`mypy --strict` clean
+throughout including all new `infra/local/*.py` helpers (checked
+individually with `--strict`, since `infra/local/` isn't in the main
+`pyproject.toml` mypy `files` list, matching the existing convention for
+`generate_bundles.py`). Every fix in this entry was verified against a
+real rebuild, not assumed from reading the diff.

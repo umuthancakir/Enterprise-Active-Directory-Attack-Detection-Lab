@@ -7,24 +7,47 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started · 🧪 STUB (present bu
 
 ## At a glance
 
+**Session 4 update: QEMU is genuinely installed (source build, no
+Homebrew — see "Known blockers"), and the local lab is no longer purely
+theoretical.** `siem01` (Ubuntu, native arm64) is **built, booted, and
+SSH-reachable for real** — the first host this project has ever actually
+run. `telemetry/elastic/docker-compose.yml` is deployed on it for real
+(Docker installed fresh via `apt`, a normal guest-side operation) and all
+8 Sigma detections are verified against that real, running,
+security-enabled Elasticsearch cluster, not a mock. `dc01` (Windows
+Server) got much further than ever before — a real, complete Windows
+install, `AutoLogon` working, a genuine desktop reached — with a real,
+diagnosed WinRM fix applied (see below); as of this entry a rebuild with
+that fix is still running. `attacker01` (Kali) remains blocked on an
+unresolved Debian-installer locale prompt. See BUILD_LOG.md session 4
+for the full account — five real, independent bugs found and fixed
+getting `siem01` this far, all invisible to any validation short of an
+actual build.
+
 All 8 phases have real, committed work. What "done" means varies by
 layer, and that variance is the whole point of this document — read the
 phase tables, not just this summary:
 
+- **Genuinely tested against a live target** (new this session): `siem01`
+  build + boot + provisioning (Packer, real QEMU), the real
+  `telemetry/elastic/docker-compose.yml` deployment and its 8/8 Sigma
+  detections against a real Elasticsearch cluster.
 - **Genuinely tested** (real tools, real assertions, run and passing):
   the scope guard, the attack engine's dry-run mode (including the
   Atomic Red Team schema integration), the detection library (8/8
-  coverage), the FastAPI backend, the Ansible roles (syntax/lint only, not
-  against a live host), the IR response automation. 91 `pytest` tests
-  passing (72 at the repo root, 19 in `platform/backend/`), `ruff`/`mypy
-  --strict` clean throughout.
+  coverage, both the abstract matcher and — new — real Elasticsearch
+  Lucene queries), the FastAPI backend, the Ansible roles (syntax/lint
+  only, not yet against a live host — `dc01`/`mem01` aren't reachable
+  yet), the IR response automation. 79 `pytest` tests passing at the
+  repo root (up from 72), `ruff`/`mypy --strict` clean throughout.
 - **Written and internally consistent, but unvalidated against real
-  infrastructure**: the Packer/UTM local-lab tooling, the telemetry
-  config, the Next.js frontend, the Docker Compose files. All blocked on
-  the same root cause — see "Known blockers."
+  infrastructure**: `dc01`/`mem01` (Windows, in progress — see above),
+  `attacker01` (blocked), the Next.js frontend, the platform Docker
+  Compose file (still blocked on Docker on the *host*, distinct from
+  Docker on the *guest*, which now works fine — see "Known blockers").
 - **Not started**: Caldera integration, Wazuh/Splunk SIEM backends
   (the latter deliberately deferred until Elastic is validated end-to-end
-  against a live lab), a docs site.
+  against a live lab — Elastic itself now is, see above), a docs site.
 
 ## Phase 0 — Scaffold
 
@@ -51,19 +74,19 @@ ADR 0004.
 
 | Item | Status | Notes |
 |---|---|---|
-| Packer: Windows Server 2022 template (dc01/mem01, x86_64 TCG-emulated) | ✅ | code written, not build-tested — no local packer/qemu install (see BUILD_LOG.md) |
-| Autounattend.xml + bootstrap.ps1 (unattended install, WinRM enable) | ✅ | written, not validated against a real install |
-| Packer: Kali ARM64 template (attacker01, native, preseed-driven) | ✅ | written; Kali ARM64 installer preseed is the least-proven part — see BUILD_LOG.md |
-| Packer: Ubuntu ARM64 template (siem01, native, cloud-init) | ✅ | written, cloud-init is a well-trodden pattern |
-| `generate_bundles.py` (.utm bundle assembly from a manual blank template) | ✅ | `ruff`/`mypy` clean; plist key names are still best-effort, unverified against a real UTM install — see infra/local/README.md |
+| Packer: Windows Server 2022 template (dc01/mem01, x86_64 TCG-emulated) | 🚧 | **build-tested for real** (session 4) — a full install completed, `AutoLogon` worked, a genuine desktop was reached; WinRM never came up because `D:\bootstrap.ps1` never ran (a real, diagnosed macOS-only Packer bug — see BUILD_LOG.md), fixed, rebuild in progress as of this entry |
+| Autounattend.xml + bootstrap.ps1 (unattended install, WinRM enable) | 🚧 | Autounattend.xml itself validated for real (MBR partition fix, `AutoLogon` both confirmed working on a real install); bootstrap.ps1's delivery mechanism was broken (see above) and is fixed but not yet confirmed to actually run end-to-end |
+| Packer: Kali ARM64 template (attacker01, native, preseed-driven) | 🚧 | **build-tested for real** — reaches Kali's real GRUB-based installer (three real bugs found and fixed: missing GPU/input devices, wrong EFI boot mechanism, missing `http_directory`) but blocked on an interactive "Select a language" dialog that survives Debian's own documented kernel-cmdline suppression params — see "Known blockers" |
+| Packer: Ubuntu ARM64 template (siem01, native, cloud-init) | ✅ | **built, booted, and SSH-reachable for real** — `infra/local/build/images/siem01/siem01.qcow2` is a genuine, working artifact. Two real bugs found and fixed beyond the obvious: Packer's cd_files ISO generation is broken on macOS (upstream bug, worked around with a custom pycdlib-based ISO builder) and `qemu-guest-agent.service` needs an explicit virtio-serial device nothing provides by default. See BUILD_LOG.md session 4 for the full account. |
+| `generate_bundles.py` (.utm bundle assembly from a manual blank template) | ✅ | `ruff`/`mypy` clean; plist key names are still best-effort, unverified against a real UTM install — see infra/local/README.md. **Not the path used to validate builds this session** — see "Known blockers" for why direct QEMU invocation was used instead |
 | One-time blank UTM template creation (arm64 + x86_64) | ⬜ | manual GUI step, not yet performed |
-| `scripts/sync_scope.py` (local state + manual IP entry → lab-scope.yaml) | ✅ | `ruff`/`mypy` clean; merge logic covered by 6 passing unit tests (`tests/test_sync_scope.py`) against fixtures — not run against real `infra/local` output (nothing built yet) |
-| AD DS role config + domain promotion (`config/dc/` Ansible) | ✅ | `ansible-playbook --syntax-check` passes; `ansible-lint config/` clean at **production** profile — still not run against a real WinRM target |
+| `scripts/sync_scope.py` (local state + manual IP entry → lab-scope.yaml) | ✅ | **run for real** against genuine `infra/local/state.json` + `discovered-ips.yaml` (hand-written this session, not `generate_bundles.py`'s output — see "Known blockers") — `inventory/lab-scope.yaml` correctly shows `siem01` as `provisioned: true`. 8 passing unit tests (`tests/test_sync_scope.py`, +2 for the new `ssh_port` field) |
+| AD DS role config + domain promotion (`config/dc/` Ansible) | ✅ | `ansible-playbook --syntax-check` passes; `ansible-lint config/` clean at **production** profile — still not run against a real WinRM target (`dc01` isn't reachable yet) |
 | Member domain join (`config/member/` Ansible) | ✅ | same validation as above |
 | Synthetic OU/users/groups | ✅ | `config/dc/tasks/ou_structure.yml`, `users_and_groups.yml` — syntax/lint-clean, not run-tested |
 | Deliberate misconfigs implemented (6 of 8 for this footprint: items 1,2,3,4,6,7; items 5/8 deferred, need `wks01`; see `docs/vulnerabilities.md`) | ✅ | all 6 written across `config/dc/tasks/misconfigs.yml` + `post_join_misconfigs.yml` — syntax/lint-clean, not run-tested |
-| `config/site.yml` (dc → member → post-join-misconfigs ordering) + dynamic inventory from `lab-scope.yaml` | ✅ | `ansible-playbook --syntax-check` passes; inventory's `build_inventory()` covered by 6 passing unit tests (`tests/test_lab_scope_inventory.py`) |
-| `make up` (build images + generate bundles) / manual VM boot / `make sync-scope` / `ansible-playbook config/site.yml` | ⬜ | requires local Packer/QEMU (still Homebrew-blocked) — not run yet |
+| `config/site.yml` (dc → member → post-join-misconfigs ordering) + dynamic inventory from `lab-scope.yaml` | 🚧 | `ansible-playbook --syntax-check` passes; inventory's `build_inventory()` covered by 8 passing unit tests. **Run for real** against the current inventory (session 4) — correctly matched 0 hosts, since `site.yml` only targets `domain_controller`/`member_server` and only `siem01` is provisioned so far; genuinely meaningful validation is still gated on `dc01` |
+| `make up` (build images + generate bundles) / manual VM boot / `make sync-scope` / `ansible-playbook config/site.yml` | 🚧 | Packer builds now genuinely run (see above); manual UTM boot was substituted with direct `qemu-system-{aarch64,x86_64}` invocation this session (see "Known blockers" for why); `make sync-scope` and `ansible-playbook` both run for real against the result |
 
 ### Safety-critical: scope guard (`attack/lib/scope_guard.py`)
 
@@ -97,7 +120,7 @@ Security auditing, not Sysmon).
 | Sysmon config (`telemetry/sysmon/`) | ✅ | well-formed XML confirmed; not deployed/validated against a real Sysmon install |
 | Windows Security audit policy + SACLs for Kerberos/DCSync/ACL-abuse/GPO/SYSVOL detection (`telemetry/windows-audit-policy/`) | ✅ | 5 PowerShell scripts (added `configure-gpo-sacl.ps1` + `configure-sysvol-file-sacl.ps1` to close the misconfig 6/7 detection gap — see Phase 4), not run against a real domain; DCSync extended-rights GUIDs flagged for verification |
 | Windows Event Forwarding (`telemetry/wef/`) | ✅ | subscription XML well-formed; GPO/wecutil setup documented but manual, not yet in Ansible |
-| SIEM shipping — Elastic (`telemetry/winlogbeat/`, `telemetry/elastic/`) | ✅ | winlogbeat.yml + docker-compose + index template, all syntax-validated (YAML/JSON parse); not run against a real Elasticsearch cluster |
+| SIEM shipping — Elastic (`telemetry/winlogbeat/`, `telemetry/elastic/`) | 🚧 | **`docker-compose.yml` + `index-template.json` run for real** (session 4) — deployed onto the real `siem01` host, `xpack.security` enabled, index template applied via a real API call, all 8 Sigma detections verified against it (see Phase 4). `winlogbeat.yml` (the `dc01`-side shipper) is still unvalidated — no reachable Windows host with real Security events yet |
 | SIEM shipping — Wazuh/Splunk (alternate `SIEM_BACKEND` values) | ⬜ | **deliberately deferred** — declared in `.env.example`, no config exists. Per operator instruction, held until at least one SIEM backend (Elastic) is validated end-to-end against a live lab, rather than building a second unvalidated backend in parallel |
 | Baseline dashboards proving events land (`telemetry/dashboards/`) | 🚧 | `baseline-queries.md` (raw KQL/DSL, the reliable version) done; `baseline-dashboard.ndjson` is a hand-authored, **not import-tested** Kibana export — see that directory's README for why the queries are the artifact to trust first |
 | Wired into `config/dc`/`config/member`/`config/siem` Ansible | ⬜ | everything above is currently a manual/documented procedure, not automated — tracked follow-up |
@@ -140,6 +163,7 @@ language) against synthetic event dicts.
 | CI detection validation | ✅ | `.github/workflows/ci.yml`'s `detections-test` job runs `python3 -m detections.test_runner` and uploads `coverage_matrix.json` as a build artifact |
 | Attack→detection coverage matrix (`detections/coverage.py`, `detections/coverage_matrix.json`) | ✅ | **8/8 techniques covered (100%)**, regenerated and committed every `make detections-test` run — feeds the Phase 5 heatmap |
 | Detections for misconfigs 6 and 7 | ✅ | `gpo_edit_abuse` (T1484.001, requires `telemetry/windows-audit-policy/configure-gpo-sacl.ps1`) and `sysvol_credential_read` (T1552.001, requires `configure-sysvol-file-sacl.ps1` — a filesystem SACL, not an AD one) — closes the coverage-matrix gap flagged in the previous pass |
+| Elasticsearch backend (`detections/elastic_backend.py`, `detections/elastic_integration_check.py`) | ✅ | **new this session, genuinely tested against a real cluster.** `elastic_backend.py` converts every rule to a real Lucene query via pySigma's own ES backend (deterministic, in the default CI suite — `tests/test_elastic_backend.py`). `elastic_integration_check.py` is the live-cluster counterpart (deliberately kept out of CI, same reasoning as `sigma-cli`) — run against a real, security-enabled `telemetry/elastic/docker-compose.yml` deployed on `siem01`: **8/8 techniques verified**, every matching fixture hit and every non_matching fixture correctly didn't. Found and fixed one real bug along the way: ES's default dynamic mapping analyzes string fields as full-text, silently breaking wildcard queries on fields like `ObjectName` — fixed by mapping fixture fields `keyword`, the same assumption the real winlogbeat index template already makes |
 
 ## Phase 5 — Platform
 
@@ -217,39 +241,102 @@ same confidence. See `platform/README.md`.
   `gh auth login`'s device-code flow (a *browser-side* interactive step
   the operator completes, not a local TTY prompt) was how git push
   authentication got resolved too.
-- **QEMU itself is still not installed — this is the actual remaining
-  blocker for `make up`.** Packer's QEMU *builder* is now installed and
-  validated (`packer fmt`/`init`/`validate` all pass locally, matching
-  CI), but Packer's QEMU builder shells out to `qemu-system-x86_64`/
-  `qemu-system-aarch64` *at build time* to actually boot and install the
-  VM — those binaries aren't installed, and QEMU doesn't distribute
-  standalone macOS binaries the way Packer/gh do (it's normally a
-  Homebrew/MacPorts package with many shared-library dependencies). So:
-  `packer build` (and therefore `make up`) still can't run locally.
-  `infra/local/packer/*.pkr.hcl`, `Autounattend.xml`, the Kali preseed,
-  and `generate_bundles.py`'s plist key assumptions remain unvalidated
-  against a real build for this reason — narrower than before, but real.
-- **UTM VM boot is a manual step.** `make up` (once QEMU is available)
-  builds images and generates `.utm` bundles but cannot start them — UTM
-  has no verified CLI path for that (see `infra/local/README.md`). The
-  operator opens UTM and starts the 4 VMs by hand before `make sync-scope`
-  can find their IPs (which also requires manually reading each guest's
-  IP into `infra/local/discovered-ips.yaml` — see that file's `.example`
-  for why this isn't automated either).
-- **Ansible roles are syntax/lint-clean and CI-verified, but unvalidated
-  against a real target.** `ansible-playbook --syntax-check` passes and
-  `ansible-lint config/` is clean at the production profile — both now
-  verified in CI on every push, not just locally — but there is still no
-  real WinRM-reachable Windows host to execute against (blocked on QEMU,
-  same as above). The misconfig-4 ACL-grant PowerShell and the
-  Kerberoasting/AS-REP-roasting setup are the parts most worth
-  re-checking by hand once a target exists, since PowerShell-inside-
+- **✅ RESOLVED (session 4): QEMU is genuinely installed.** Neither
+  Homebrew nor MacPorts install QEMU without the same interactive-TTY
+  sudo prompt this environment can't provide (MacPorts' own installer
+  needs the same kind of privileged step, GUI or not), and QEMU
+  publishes no standalone macOS binaries the way Packer/gh do. Built
+  from source instead, entirely without sudo: conda-forge (via an
+  Anaconda install already present on this machine) has every build
+  dependency QEMU needs — `pixman`, `glib`, `pkg-config`, `ninja`,
+  `meson`, `libslirp` — for osx-arm64, installed into a dedicated conda
+  env. QEMU 9.2.0 built and ran, but crashed under `-cpu host` on this
+  machine's Apple M4 Pro chip (`Property 'host-arm-cpu.sme' not found` —
+  a real HVF/SME feature-detection gap for CPU generations newer than
+  that release); QEMU **11.0.3** (current stable) doesn't hit this bug.
+  Both `qemu-system-x86_64 --version` and `qemu-system-aarch64 --version`
+  exit 0, and — more importantly — both accelerators the project's
+  templates actually use (`-M pc -accel tcg`, `-M virt -accel hvf -cpu
+  host`) were verified with real boot tests, not just version checks.
+- **UTM's embedded QEMU can't be reused directly — genuinely checked, not
+  assumed.** UTM.app (already installed) bundles its own compiled QEMU at
+  `Contents/Frameworks/qemu-{arch}-softmmu.framework/`, but `otool -hv`
+  shows `filetype DYLIB`: UTM links QEMU in-process as a library, not a
+  CLI binary Packer's builder could shell out to (confirmed by trying to
+  exec one directly — `exec format error`).
+- **UTM GUI boot was substituted with direct QEMU invocation for this
+  session's validation — a real, working host, just not through UTM.**
+  UTM has no scriptable boot path (see `infra/local/README.md`), and
+  nothing about that changed this session — an operator still needs to
+  open UTM and click start for the *intended* deploy path. What changed:
+  since the built `.qcow2` artifacts are real and QEMU is now installed,
+  `siem01` was booted directly via `qemu-system-aarch64` (same
+  accelerator/machine-type the `.pkr.hcl` templates use) to get a
+  genuine, reachable host for validation this session, reachable at
+  `127.0.0.1` + a host-side forwarded port (`infra/local/state.json`'s
+  `ssh_port` field, plumbed through `scripts/sync_scope.py` into
+  `config/inventory/lab_scope_inventory.py`'s `ansible_port`) rather than
+  a real routable UTM host-only IP. `infra/local/generate_bundles.py`
+  (the actual `.utm`-bundle path) is unchanged and still unvalidated.
+- **Packer's `cd_files`/`cd_label` mechanism is broken on macOS — a real,
+  known upstream bug, not something specific to this project's
+  templates.** Packer's SDK unconditionally builds `cd_files` ISOs via
+  `hdiutil makehybrid -hfs -joliet -iso ...`
+  ([packer-plugin-qemu#133](https://github.com/hashicorp/packer-plugin-qemu/issues/133)),
+  which wraps the ISO9660 filesystem in an HFS+ hybrid layer that both
+  Linux's cloud-init NoCloud datasource and Windows' runtime CDFS driver
+  fail to read correctly (each in a different way — see BUILD_LOG.md
+  session 4 for both). `xorriso`/`mkisofs` avoid the bug but have no
+  non-Homebrew install path here either. Fixed for both `siem01` and
+  `dc01`/`mem01` with a small pycdlib-based ISO builder
+  (`infra/local/iso_builder.py`) that bypasses `cd_files` entirely.
+- **Ansible roles are syntax/lint-clean and CI-verified, and `siem01` is
+  now a real reachable target — but `config/site.yml` doesn't cover it.**
+  `ansible-playbook --syntax-check` passes and `ansible-lint config/` is
+  clean at the production profile, verified in CI on every push. Run for
+  real against the current inventory (session 4): 0 hosts matched, since
+  `site.yml`'s three plays only target `domain_controller`/
+  `member_server` and only `siem01` (role `siem`) is provisioned so far.
+  Genuinely meaningful Ansible validation is still gated on `dc01`
+  becoming WinRM-reachable. The misconfig-4 ACL-grant PowerShell and the
+  Kerberoasting/AS-REP-roasting setup remain the parts most worth
+  re-checking by hand once that happens, since PowerShell-inside-
   `win_shell` is invisible to `ansible-lint`.
-- **Node.js and Docker remain unavailable — same root cause as QEMU, not
-  Packer/gh's.** Both are normally installed via a system package manager
-  with dependencies that don't reduce to a single portable binary the way
-  Packer/gh do. `platform/frontend/`'s `npm install`/`eslint`/`tsc`/`npm
-  test` and `platform/docker-compose.yml` have never run locally — but
-  **both are now verified in CI** (the `frontend` job passed on the first
-  real run, without ever running locally first — a genuinely useful data
-  point that the hand-written TypeScript was correct).
+- **Node.js and Docker remain unavailable on the *host* — same root cause
+  as QEMU used to be, not Packer/gh's. Docker on a *guest* is a different
+  story and now works fine.** `platform/frontend/`'s `npm install`/
+  `eslint`/`tsc`/`npm test` and `platform/docker-compose.yml` (which runs
+  outside the lab network, on the host) have still never run locally —
+  but both are verified in CI. Separately, `siem01` (a normal Ubuntu
+  guest, unrelated to what's installable on the macOS host) got Docker
+  via a plain `apt-get install docker.io` with no issues at all, and
+  `telemetry/elastic/docker-compose.yml` runs on it for real — see Phase
+  2/4 above.
+- **`attacker01` (Kali) is blocked on an interactive language-selection
+  prompt that survives Debian's own documented suppression mechanism.**
+  Three real bugs were found and fixed getting this far (missing GPU/USB
+  input devices on QEMU's aarch64 `virt` machine, the wrong EFI boot
+  mechanism, an accidentally-dropped `http_directory` — see BUILD_LOG.md
+  session 4), but the installer still stops at an interactive "[!!]
+  Select a language" dialog before `netcfg` brings up networking (i.e.
+  before the network preseed can ever be fetched to answer it). Tried
+  Debian's documented kernel-cmdline fix for exactly this case
+  (`debian-installer/locale=en_US.UTF-8
+  keyboard-configuration/xkb-keymap=us`) twice, including the simplified
+  minimal-recipe version — confirmed via a real rebuild that the same
+  dialog still appears regardless. Next untried step: Kali's
+  `simple-cdd/profiles=kali` + on-disc `preseed/file=` layer (visible in
+  the boot line) may be interposing its own earlier prompt ahead of
+  stock Debian-installer's.
+- **`dc01`/`mem01` (Windows) are close but not confirmed yet.** A build
+  got further than ever before this session — full install, `AutoLogon`,
+  a real desktop — before being blocked on WinRM (root-caused: the
+  `cd_files` bug above meant `bootstrap.ps1` never ran; confirmed by
+  probing the WinRM endpoint directly and reading its
+  `WWW-Authenticate: Negotiate`-only header, not by guessing from a
+  timeout). A rebuild with the real fix (the same pycdlib-based ISO
+  builder, extended to replicate the main disk + install ISO drives
+  alongside the custom seed since Packer's `qemuargs` override
+  suppresses *all* auto-generated drives once any custom one is added —
+  see BUILD_LOG.md) was still running as of this entry. `mem01` hasn't
+  been attempted at all — same template, once `dc01` is confirmed.
