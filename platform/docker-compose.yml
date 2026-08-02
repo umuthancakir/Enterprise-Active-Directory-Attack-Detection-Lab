@@ -5,9 +5,15 @@
 # diagram) — distinct from telemetry/elastic/docker-compose.yml, which
 # runs the SIEM stack ON siem01, inside the lab.
 #
-# STATUS: written, not run — no local Docker install (see ROADMAP.md
-# "Known blockers"). platform/frontend/ in particular has not even had
-# `npm install` run against it (no Node.js here either).
+# STATUS: run for real (session 4) — see BUILD_LOG.md. Docker itself
+# runs via colima (lima + Apple's Virtualization.framework, no Homebrew,
+# no QEMU dependency) after Docker Desktop's own installer turned out to
+# need the same interactive-TTY admin prompt as Homebrew. All three
+# services (postgres, backend, frontend) build and start; the frontend
+# UI works end-to-end through a real login (JWT), and POST /runs, GET
+# /coverage all resolve through the real scope guard and coverage
+# matrix — one real bug found and fixed getting there, see the
+# LAB_SCOPE_FILE/COVERAGE_MATRIX_FILE comment below.
 
 services:
   postgres:
@@ -39,6 +45,19 @@ services:
       BACKEND_CORS_ORIGINS: ${BACKEND_CORS_ORIGINS:-http://localhost:3000}
       BACKEND_ADMIN_USERNAME: ${BACKEND_ADMIN_USERNAME:-admin}
       BACKEND_ADMIN_PASSWORD: ${BACKEND_ADMIN_PASSWORD:?BACKEND_ADMIN_PASSWORD must be set in .env}
+      # app/config.py's defaults (`Path(__file__).resolve().parents[3]`)
+      # assume the HOST's directory depth (platform/backend/app/config.py
+      # -> repo root is 3 levels up) — inside this image, app/config.py
+      # ends up at /app/backend/app/config.py, only 3 levels above `/`
+      # itself, so that same arithmetic silently resolves to
+      # "/inventory/lab-scope.yaml" instead of the real mount below.
+      # Caught by a real POST /runs request against a real running
+      # container, not by any test (pytest only ever runs on the host,
+      # where the coincidentally-matching depth hides this entirely) —
+      # see BUILD_LOG.md. Overriding explicitly here is more robust than
+      # trying to fix the path arithmetic to work for both cases.
+      LAB_SCOPE_FILE: /app/inventory/lab-scope.yaml
+      COVERAGE_MATRIX_FILE: /app/detections/coverage_matrix.json
     volumes:
       # Read-only mounts so the container sees the real scope file +
       # coverage matrix without rebuilding the image every time either
