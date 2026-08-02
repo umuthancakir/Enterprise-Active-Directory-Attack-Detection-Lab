@@ -102,6 +102,30 @@
           <Value>__ADMIN_PASSWORD__</Value>
           <PlainText>true</PlainText>
         </AdministratorPassword>
+        <!-- windows-server.pkr.hcl's communicator authenticates as
+             "labadmin" (config/group_vars/all.yml's lab_admin_username —
+             the same convention siem01/attacker01 use via cloud-init/
+             preseed), but nothing in this file ever created that account
+             — only the built-in Administrator existed. Packer's WinRM
+             communicator was therefore polling with credentials for a
+             user that didn't exist, and would have failed even once
+             bootstrap.ps1 ran and enabled WinRM Basic auth. Found on a
+             real build (dc01, build4): reached a genuine desktop
+             (confirmed via VNC) with WinRM listening but Negotiate-only
+             — consistent with bootstrap.ps1 running under Administrator
+             (see AutoLogon below, now switched to labadmin) rather than
+             failing outright. See BUILD_LOG.md. -->
+        <LocalAccounts>
+          <LocalAccount wcm:action="add">
+            <Name>labadmin</Name>
+            <Group>Administrators</Group>
+            <DisplayName>Lab Admin</DisplayName>
+            <Password>
+              <Value>__ADMIN_PASSWORD__</Value>
+              <PlainText>true</PlainText>
+            </Password>
+          </LocalAccount>
+        </LocalAccounts>
       </UserAccounts>
       <!-- Without AutoLogon, Windows sits at the lock screen after OOBE
            forever waiting for someone to physically type credentials —
@@ -115,11 +139,13 @@
            WinRM with persistent "401 - invalid content type" errors for
            over an hour. LogonCount=1 is enough to trigger
            FirstLogonCommands once; it does not leave the account
-           auto-logging-in on every subsequent boot. -->
+           auto-logging-in on every subsequent boot. AutoLogon uses
+           labadmin (not Administrator) so bootstrap.ps1 runs as the same
+           account Packer's WinRM communicator authenticates as. -->
       <AutoLogon>
         <Enabled>true</Enabled>
         <LogonCount>1</LogonCount>
-        <Username>Administrator</Username>
+        <Username>labadmin</Username>
         <Password>
           <Value>__ADMIN_PASSWORD__</Value>
           <PlainText>true</PlainText>
