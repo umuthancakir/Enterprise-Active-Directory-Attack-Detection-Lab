@@ -66,16 +66,38 @@ services:
       - ../detections/coverage_matrix.json:/app/detections/coverage_matrix.json:ro
     ports:
       - "8000:8000"
+    healthcheck:
+      # No curl/wget in python:3.12-slim — use the interpreter that's
+      # already there. Without this, `--wait` (CI's platform-compose job,
+      # or anyone else scripting startup) treats a container with no
+      # healthcheck as "healthy" the instant the process starts, not once
+      # uvicorn is actually accepting connections — caught by a real CI
+      # run where the very next step's curl hit connection-reset because
+      # it ran before uvicorn had finished starting.
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
 
   frontend:
     build:
       context: frontend
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     environment:
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
     ports:
       - "3000:3000"
+    healthcheck:
+      # Same reasoning as backend's healthcheck above — node is already
+      # in node:22-slim, no need for curl.
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000', r => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
 
 volumes:
   pgdata:

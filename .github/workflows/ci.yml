@@ -35,6 +35,14 @@ jobs:
           ssh-keygen -t ed25519 -N "" -C "ci-validate-only" -f infra/local/build/ssh/lab_ed25519
           cp infra/local/packer/http-linux/user-data.tmpl infra/local/packer/http-linux/user-data
       - name: packer init + validate (windows-server)
+        # rendered_autounattend/seed_iso have no default (see
+        # windows-server.pkr.hcl — build.sh always supplies them from a
+        # gitignored path). They're plain strings interpolated into
+        # qemuargs, not read via an HCL file()/exists() check, so a
+        # placeholder string (not a real file) is enough to satisfy
+        # `packer validate`. Caught missing on a real CI run — validate
+        # errored "Unset variable" and failed the whole job before the
+        # kali-attacker/ubuntu-siem steps below even ran. See BUILD_LOG.md.
         run: |
           packer init infra/local/packer/windows-server.pkr.hcl
           packer validate \
@@ -42,6 +50,8 @@ jobs:
             -var iso_url=https://example.invalid/placeholder.iso \
             -var iso_checksum=sha256:0000000000000000000000000000000000000000000000000000000000000000 \
             -var admin_password=placeholder-for-ci-validate-only \
+            -var rendered_autounattend=/tmp/placeholder-autounattend.xml \
+            -var seed_iso=/tmp/placeholder-seed.iso \
             infra/local/packer/windows-server.pkr.hcl
       - name: packer init + validate (kali-attacker)
         run: |
@@ -52,10 +62,13 @@ jobs:
             -var admin_ssh_public_key="ssh-ed25519 AAAAplaceholder" \
             infra/local/packer/kali-attacker.pkr.hcl
       - name: packer init + validate (ubuntu-siem)
+        # nocloud_iso has no default either — same reasoning as
+        # rendered_autounattend/seed_iso above.
         run: |
           packer init infra/local/packer/ubuntu-siem.pkr.hcl
           packer validate \
             -var base_image_checksum=sha256:0000000000000000000000000000000000000000000000000000000000000000 \
+            -var nocloud_iso=/tmp/placeholder-nocloud.iso \
             infra/local/packer/ubuntu-siem.pkr.hcl
 
   ansible-lint:
@@ -173,14 +186,21 @@ jobs:
     # real endpoint — see platform/docker-compose.yml's LAB_SCOPE_FILE
     # comment. This job is what keeps that class of bug caught on every
     # push instead of only when someone happens to run it by hand again.
+    env:
+      # Job-level, not step-level — docker-compose.yml's ${VAR:?...}
+      # interpolation runs fresh every time `docker compose` is invoked
+      # (up, logs, down all re-parse the compose file), so every step
+      # that shells out to it needs these, not just the initial `up`.
+      # A step-scoped `env:` here left `docker compose logs`/`down`
+      # failing with "BACKEND_SECRET_KEY must be set" on a real CI run
+      # even though `up` itself had succeeded — see BUILD_LOG.md.
+      POSTGRES_PASSWORD: ci-only-postgres-password
+      BACKEND_SECRET_KEY: ci-only-backend-secret-key
+      BACKEND_ADMIN_PASSWORD: ci-only-admin-password
     steps:
       - uses: actions/checkout@v4
       - name: Build and start the stack
         working-directory: platform
-        env:
-          POSTGRES_PASSWORD: ci-only-postgres-password
-          BACKEND_SECRET_KEY: ci-only-backend-secret-key
-          BACKEND_ADMIN_PASSWORD: ci-only-admin-password
         run: docker compose up -d --build --wait --wait-timeout 120
       - name: Backend health check
         run: curl -sf http://localhost:8000/health
